@@ -13,7 +13,7 @@ k3s_cluster:
 
   vars:
     ansible_port: 22
-    k3s_version: v1.32.2+k3s1
+    k3s_version: v1.36.0+k3s1
     token: "{{ lookup('env', 'K3S_TOKEN') }}"
     api_endpoint: "{{ hostvars[groups['server'][0]]['ansible_host'] | default(groups['server'][0]) }}"
     extra_server_args: ""
@@ -22,7 +22,13 @@ k3s_cluster:
 
     # Homelab defaults: Traefik + servicelb + local-path enabled
     # GPU runtime configured separately via containerd config template
+    # node-ip / advertise-address pinned to IPv4 (2026-07-04): the RTL8812AE WiFi
+    # brings up IPv6 SLAAC ~seconds after link-up. If k3s starts before that,
+    # etcd fails with `bind: cannot assign requested address` on [2001:...]:2380
+    # and the whole server crash-loops until the SLAAC address appears.
     server_config_yaml: |
       cluster-init: true
+      node-ip: 192.168.1.50
+      advertise-address: 192.168.1.50
       tls-san:
           - 100.100.62.1
