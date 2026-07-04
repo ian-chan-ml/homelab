@@ -91,7 +91,10 @@ serviceMonitor:
   enabled: false
 
 # Sensible pod hygiene: non-root, read-only rootfs, no privileged.
-# Dex writes nothing to disk with storage.type=memory.
+# Dex writes nothing to durable disk with storage.type=memory, but it
+# does write an expanded copy of its config file (env-var interpolation)
+# to a temp file before loading. With readOnlyRootFilesystem the default
+# /tmp is unwritable, so we mount an emptyDir there.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
@@ -102,6 +105,13 @@ securityContext:
   capabilities:
     drop:
       - ALL
+
+volumes:
+  - name: tmp
+    emptyDir: {}
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
 
 resources:
   requests:
