@@ -1,9 +1,9 @@
 # Plex Media Server — PVCs, Service, Deployment.
 #
-# Image: plexinc/pms-docker:1.41.9.9961-46e0b7f14 (published 2026-06-30,
-# latest stable at deploy time). Rotate the tag deliberately; the
-# `latest` tag is a moving target and Plex occasionally ships DB schema
-# migrations that are one-way.
+# Image: plexinc/pms-docker:1.43.2.10687-563d026ea (published
+# 2026-05-19, latest stable at deploy time). Rotate the tag
+# deliberately; the `latest` tag is a moving target and Plex
+# occasionally ships DB schema migrations that are one-way.
 #
 # The plexinc image runs as root by default and re-execs Plex as
 # PLEX_UID / PLEX_GID inside the container. We pin both to 1000 to
@@ -130,7 +130,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: plex
-          image: plexinc/pms-docker:1.41.9.9961-46e0b7f14
+          image: plexinc/pms-docker:1.43.2.10687-563d026ea
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
