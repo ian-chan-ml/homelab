@@ -21,3 +21,4 @@ resources:
   - envoy-gateway-repo.yaml
   - envoy-gateway.yaml
   - dex.yaml
+  - reflector.yaml

@@ -1,0 +1,19 @@
+# emberstack/reflector — mirrors annotated Secrets/ConfigMaps
+# into other namespaces.
+#
+# Used here to fan out `external-secrets/shared-homelab-secrets`
+# to every namespace in the cluster. See
+# infra/kustomize/external-secrets/shared-homelab-secrets.yaml
+# for the source ExternalSecret + reflection annotations.
+#
+# Chart docs: https://github.com/emberstack/kubernetes-reflector
+#
+# Defaults are fine for a single-node homelab: 1 replica, low
+# resource footprint, watches all namespaces cluster-wide.
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi

@@ -3,6 +3,16 @@
 How leaked-or-rotation-due secrets in this repo are handled today, and
 the planned migration to ExternalSecret + 1Password Connect.
 
+> **See also: `shared-homelab-secrets`.** For "small, low-cardinality
+> secrets that would otherwise live inline in git" (app db passwords,
+> encryption keys, PATs) the current end-state is a single shared
+> Secret fanned out by emberstack/reflector, not one ExternalSecret per
+> app. See the **Shared-secrets pattern** section at the bottom of this
+> file. The per-Secret ExternalSecret pattern described below still
+> applies for secrets with distinct rotation lifecycles or
+> distinct-per-consumer scopes (`gateway-api-key-inbox`,
+> `cloudflared-tunnel-token`, Google OAuth clients, Dex clients, etc.).
+
 The reference case throughout is **`gateway/gateway-api-key`** — the
 shared X-API-Key Secret consumed by the `inbox-apikey` SecurityPolicy
 on the `inbox` listener of Gateway `public`. The same pattern applies
@@ -283,3 +293,170 @@ Update this table as items are migrated.
   Gateway SecurityPolicy `credentialRef`, the listener will reject
   every request until the Secret reappears. Recreate within the same
   shell, do not leave a gap.
+
+---
+
+## Shared-secrets pattern (`shared-homelab-secrets`)
+
+For secrets that are (a) small, (b) low-cardinality, and (c) don't
+have their own rotation cadence — the app-DB-password / encryption-key
+/ personal-access-token flavour — we fan out a **single** Secret to
+**every** namespace instead of writing one ExternalSecret per app.
+
+### Topology
+
+```
+1Password item                       ExternalSecret               reflector
+"shared-homelab-secrets"     ─→      shared-homelab-secrets  ─→   shared-homelab-secrets
+(vault: quanianitis.com)             (ns: external-secrets)       (ns: *  — every namespace)
+one item, many fields                one manifest, dataFrom.extract
+```
+
+- **1Password item:** exactly one, title `shared-homelab-secrets`,
+  vault `quanianitis.com`. Each secret is a **field on the item**.
+  Field label → Secret data key verbatim. Prefer kebab-case labels
+  (`firefly-db-password`, `n8n-encryption-key`) — they survive env-var
+  translation and don't collide across apps.
+- **ExternalSecret:** `infra/kustomize/external-secrets/shared-homelab-secrets.yaml`.
+  Uses `dataFrom.extract` so **adding a new field in 1Password
+  automatically appears in the reflected Secret** with no manifest
+  change. Refresh interval is 1h; force a refresh with
+  `kubectl annotate externalsecret -n external-secrets shared-homelab-secrets
+  force-sync=$(date +%s) --overwrite`.
+- **Reflector:** `infra/kustomize/reflector/` (chart
+  `emberstack/reflector` v10.0.55, deployed to ns `reflector` by the
+  `reflector` Argo Application). The source Secret carries
+  `reflector.v1.k8s.emberstack.com/reflection-{allowed,auto-enabled}=true`
+  and empty `-namespaces` (= all namespaces), so a mirror named
+  `shared-homelab-secrets` shows up in every namespace, including
+  future ones as they are created.
+
+### Consumer contract
+
+Every workload that needs a shared secret does:
+
+```yaml
+env:
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: shared-homelab-secrets
+        key: firefly-db-password
+```
+
+**Do not** `envFrom: secretRef: name: shared-homelab-secrets` — that
+dumps every key in the shared Secret into the container's env, which
+leaks unrelated app secrets across process boundaries. Use explicit
+per-key `secretKeyRef` blocks.
+
+### Adding a new shared secret
+
+1. Add the field to the 1P item:
+   ```sh
+   op item edit shared-homelab-secrets \
+     --vault quanianitis.com \
+     "new-key-label[password]=<value>"
+   ```
+2. Wait ≤1h (or force-sync — see above). The reflected Secret picks up
+   the new key in every namespace.
+3. Reference the key from the consumer manifest via `secretKeyRef`.
+
+### 1Password item schema (Phase 2 migration target)
+
+The `shared-homelab-secrets` item **must** hold these fields before
+the Phase 2 commit is pushed (see checklist below). Values with
+`(leaked)` are known-public in this repo's git history and MUST be
+rotated when copied into 1Password, not copy-pasted.
+
+| Field label                 | Current source                                    | Notes |
+| --------------------------- | ------------------------------------------------- | ----- |
+| `n8n-encryption-key`        | `n8n/n8n-app.N8N_ENCRYPTION_KEY` (leaked)         | 48-char hex. **DO NOT rotate** — rotating invalidates every stored credential in the n8n DB. Copy the current value in as-is and rotate only via the n8n CLI export/import flow. |
+| `n8n-db-password`           | `n8n/n8n-postgres.POSTGRES_PASSWORD` (leaked)     | Rotate: mint new value, update in 1P, apply, restart postgres + n8n pods (postgres will accept the new password because it's set via `POSTGRES_PASSWORD` env at container start — you need to `ALTER USER` inside the DB too, or wipe the PVC if the app data is disposable). |
+| `firefly-app-key`           | `firefly/firefly-app.APP_KEY` (leaked)            | 32-char hex, exactly. Firefly re-encrypts nothing on rotation; changing it invalidates any encrypted-at-rest attachments. Prefer to keep the existing value. |
+| `firefly-static-cron-token` | `firefly/firefly-app.STATIC_CRON_TOKEN` (leaked)  | 32-char hex. Safe to rotate; the cron pod picks it up on next schedule. |
+| `firefly-db-password`       | `firefly/firefly-postgres.POSTGRES_PASSWORD` (leaked) | Same caveat as `n8n-db-password`. |
+| `duitku-firefly-pat`        | `duitku/duitku.FIREFLY_PAT` (empty in git)        | Populate with a real Firefly III Personal Access Token (Firefly UI → Profile → OAuth → Personal Access Tokens). |
+
+Non-secret fields (`POSTGRES_DB`, `POSTGRES_USER`) do **not** go in
+1Password. They move to a plain `ConfigMap` alongside the workload as
+part of Phase 2.
+
+### Phase 2 migration checklist (blocked on populating 1P item)
+
+Phase 1 (this commit) lands the reflector, the shared ExternalSecret,
+and the required namespace — nothing that breaks anything. The
+ExternalSecret will report `SecretSyncedError` until the 1P item
+exists; that is expected and safe.
+
+Phase 2 is a follow-up commit that:
+
+1. **Prereq (Ian, out-of-band):** create the 1P item with the schema
+   above. Verify:
+   ```sh
+   op item get shared-homelab-secrets --vault quanianitis.com \
+     --fields label=n8n-encryption-key,label=n8n-db-password,label=firefly-app-key,label=firefly-static-cron-token,label=firefly-db-password,label=duitku-firefly-pat
+   ```
+2. **Force-sync the ExternalSecret** and confirm the target Secret
+   materialises in `external-secrets`:
+   ```sh
+   kubectl annotate externalsecret -n external-secrets shared-homelab-secrets \
+     force-sync=$(date +%s) --overwrite
+   kubectl get secret -n external-secrets shared-homelab-secrets \
+     -o jsonpath='{.data}' | jq 'keys'
+   ```
+3. **Confirm the reflector fan-out**:
+   ```sh
+   kubectl get secret -A --field-selector metadata.name=shared-homelab-secrets
+   # expect: one row per namespace
+   ```
+4. **Rewire consumers** (single git commit):
+   - `infra/charts/n8n/n8n.yaml`: replace
+     `envFrom: - secretRef: {name: n8n-app}` with explicit
+     `env: - name: N8N_ENCRYPTION_KEY / DB_POSTGRESDB_PASSWORD`
+     `valueFrom.secretKeyRef.name: shared-homelab-secrets` +
+     matching `key`.
+   - `infra/charts/n8n/postgres.yaml`: same, plus move `POSTGRES_DB`
+     and `POSTGRES_USER` to a new ConfigMap `n8n-postgres` (env-only,
+     no secrets).
+   - `infra/charts/firefly/firefly.yaml`, `.../postgres.yaml`,
+     `.../cron.yaml`: same pattern (`firefly-app-key`,
+     `firefly-static-cron-token`, `firefly-db-password`, ConfigMap for
+     `POSTGRES_DB`/`POSTGRES_USER`).
+   - `infra/charts/duitku/sweep.yaml`: change the `secretKeyRef.name`
+     from `duitku` to `shared-homelab-secrets`, `key` from
+     `FIREFLY_PAT` to `duitku-firefly-pat`.
+5. **Delete the leaked inline manifests** in the *same* commit
+   (Argo will prune the in-cluster Secrets on the next sync; the
+   consumers by then already reference `shared-homelab-secrets`):
+   - `infra/charts/n8n/secret.yaml`
+   - `infra/charts/firefly/secret.yaml`
+   - `infra/charts/duitku/secret.yaml`
+   - remove them from each `kustomization.yaml`.
+6. **Post-migration verification**:
+   ```sh
+   kubectl rollout status -n n8n deploy/n8n
+   kubectl rollout status -n n8n deploy/n8n-postgres
+   kubectl rollout status -n firefly deploy/firefly
+   kubectl rollout status -n firefly deploy/firefly-postgres
+   kubectl get cronjobs -A | grep -E "firefly|duitku"
+   ```
+7. **After confirmed healthy: rotate the leaked values** by editing
+   the fields in 1Password and force-syncing the ExternalSecret. Then
+   restart the affected pods so they pick up the new values. (Do not
+   rotate `n8n-encryption-key` or `firefly-app-key` — see schema
+   notes.)
+
+### What stays out of the shared secret
+
+These have their own lifecycle and remain managed separately:
+
+- `gateway/gateway-api-key` (Cloudflare Worker rotation, per-listener)
+- `cloudflared/cloudflared-tunnel-token` (per-tunnel, already ESO)
+- `gateway/{dex, dex-client-envoy, envoy-oidc-hmac, google-oauth-client}`
+  (OIDC lifecycle, per-provider)
+- `monitoring/{google-oauth-client, dashboard-bearer-credential, grafana}`
+  (OIDC / SA-token / chart-managed)
+- `plane/plane-*-secrets` (generated by the plane Helm chart at install)
+- `argocd/*`, `cilium-system/*`, `envoy-gateway-system/*`,
+  `kube-system/*` (system-owned bootstrap secrets)
+- `external-secrets/1password` (ESO's own auth to 1P — chicken-and-egg)
