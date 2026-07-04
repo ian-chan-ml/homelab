@@ -42,6 +42,27 @@ configs:
     # side-effect of unblocking the .status.terminatingReplicas bug.
     # See: argo-cd/docs/operator-manual/upgrading/2.14-3.0.md
     application.resourceTrackingMethod: label
+    # Cluster-wide ignoreDifferences for HTTPRoute (Gateway API v1).
+    # Every HTTPRoute we author is minimal: `parentRefs: [{name, namespace}]`,
+    # a single `backendRefs: [{name, port}]`, no `matches` (defaults to
+    # PathPrefix "/"). The k8s API server default-fills the enum/default
+    # fields on write, so read-back always includes `group`, `kind`, default
+    # `weight: 1`, and a defaulted `matches` block. Argo's structured diff
+    # then reports OutOfSync forever on every HTTPRoute.
+    # Ignoring these fields cluster-wide eliminates the drift on n8n,
+    # firefly, plane, duitku-inbox, argocd, and any future HTTPRoutes that
+    # follow the same "single backend, catch-all path" pattern.
+    # Trade-off: real changes to `weight` or `matches` will also be hidden
+    # from the diff view. If we ever adopt weighted routing (canary,
+    # blue/green) or path-specific rules, revisit these expressions.
+    resource.customizations.ignoreDifferences.HTTPRoute.gateway.networking.k8s.io: |
+      jqPathExpressions:
+        - .spec.parentRefs[]?.group
+        - .spec.parentRefs[]?.kind
+        - .spec.rules[]?.backendRefs[]?.group
+        - .spec.rules[]?.backendRefs[]?.kind
+        - .spec.rules[]?.backendRefs[]?.weight
+        - .spec.rules[]?.matches
   params:
     server.insecure: true
   rbac:
