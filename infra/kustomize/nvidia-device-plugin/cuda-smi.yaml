@@ -1,0 +1,40 @@
+# CUDA smoke test — one-shot JobSet in the mlops namespace.
+# Wraps a nvidia-smi run in a JobSet (over a plain Job) so we can extend
+# it later to multi-replica GPU sanity checks (per-node smoke, MIG probes)
+# without changing the surface.
+#
+# Usage:
+#   kubectl -n mlops get jobset cuda-smi
+#   kubectl -n mlops logs -l jobset.sigs.k8s.io/jobset-name=cuda-smi
+#
+# The JobSet finishes as `Completed` after nvidia-smi returns 0; delete
+# the JobSet to re-run.
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: cuda-smi
+  namespace: mlops
+spec:
+  successPolicy:
+    operator: All
+  failurePolicy:
+    maxRestarts: 0
+  replicatedJobs:
+    - name: smi
+      replicas: 1
+      template:
+        spec:
+          backoffLimit: 0
+          completions: 1
+          parallelism: 1
+          template:
+            spec:
+              runtimeClassName: nvidia
+              restartPolicy: Never
+              containers:
+                - name: cuda-smi
+                  image: nvidia/cuda:12.4.1-base-ubuntu22.04
+                  command: ["nvidia-smi"]
+                  resources:
+                    limits:
+                      nvidia.com/gpu: "1"

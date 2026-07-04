@@ -22,3 +22,4 @@ resources:
   - envoy-gateway.yaml
   - dex.yaml
   - reflector.yaml
+  - jobset.yaml
