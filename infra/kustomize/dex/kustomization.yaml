@@ -46,20 +46,23 @@
 #   2. `gateway/dex-client-envoy` (ExternalSecret + 1Password)
 #      Static client credential Dex issues to the Envoy Gateway
 #      public-oidc SecurityPolicy. Managed by ESO — see
-#      externalsecret-envoy-client.yaml. Sourced from the SHARED 1P
-#      item `shared-homelab-secrets` in vault `quanianitis.com`,
-#      fields `dex-envoy-client-id` + `dex-envoy-client-secret`. This
-#      ExternalSecret projects those two fields into a Secret shaped
-#      the way Envoy Gateway's SecurityPolicy expects (`client-id` /
-#      `client-secret` — hard-coded key names, no override). One 1P
-#      item for the whole cluster; app-specific fields live inside it.
+#      externalsecret-envoy-client.yaml. Sourced from 1P item
+#      `gateway-homelab-auth` in vault `quanianitis.com`
+#      (deliberately its own item, not shared-homelab-secrets — see
+#      that file's header for the rationale: this item groups
+#      north-south gateway auth material, which has a different
+#      rotation cadence and blast radius from app-level secrets).
+#      Fields on the item: `client-id`, `client-secret` — literal
+#      names Envoy Gateway's SecurityPolicy hard-codes, so
+#      `dataFrom.extract` re-emits them 1:1 with no remap.
 #
-#      Add the two fields to the shared 1P item from the current live
-#      values with:
-#        op item edit shared-homelab-secrets --vault quanianitis.com \
-#          "dex-envoy-client-id[text]=$(kubectl get secret -n gateway dex-client-envoy \
+#      Seed the 1P item from the current live values with:
+#        op item create --category=login --vault=quanianitis.com \
+#          --title=gateway-homelab-auth \
+#          --tags=homelab,gateway,dex,oidc \
+#          "client-id[text]=$(kubectl get secret -n gateway dex-client-envoy \
 #              -o jsonpath='{.data.client-id}' | base64 -d)" \
-#          "dex-envoy-client-secret[password]=$(kubectl get secret -n gateway dex-client-envoy \
+#          "client-secret[password]=$(kubectl get secret -n gateway dex-client-envoy \
 #              -o jsonpath='{.data.client-secret}' | base64 -d)"
 #      then delete the out-of-band Secret so ESO can create it fresh
 #      with itself as owner:

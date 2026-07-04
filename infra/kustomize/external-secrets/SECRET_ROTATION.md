@@ -468,57 +468,41 @@ Those generic key names collide across multiple OIDC clients / DBs, so
 we cannot point the consumer directly at the cluster-wide reflected
 `shared-homelab-secrets` Secret.
 
-The rule remains **one 1P item for the whole cluster**. To satisfy
-these consumers, add a small **shape-projecting ExternalSecret** that
-reads specific fields out of the same shared 1P item and re-emits
-them into a Secret with the exact name and key shape the consumer
-needs.
+**The rule is one 1P item per concern, not one per app.** Group
+related credentials into the same item; give each item its own thin
+ExternalSecret. Today:
 
-Concrete example — Dex ↔ Envoy Gateway static-client credential,
-`infra/kustomize/dex/externalsecret-envoy-client.yaml`:
+| 1P item                    | Vault             | Concern                                           |
+| -------------------------- | ----------------- | ------------------------------------------------- |
+| `shared-homelab-secrets`   | quanianitis.com   | App-level cross-cutting (DB pwds, encryption keys, PATs). Reflected cluster-wide. |
+| `gateway-homelab-auth`     | quanianitis.com   | North-south gateway auth (OIDC clients, HMAC).    |
+| `1password-server-token`   | quanianitis.com   | ESO's own auth to 1P Connect (bootstrap, do not touch). |
 
-```yaml
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: dex-client-envoy
-  namespace: gateway              # lives with its consumer
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: 1password               # same store, same 1P item
-  target:
-    name: dex-client-envoy        # the name the SecurityPolicy names
-    creationPolicy: Owner
-  data:                           # explicit remap, not dataFrom.extract
-    - secretKey: client-id        # ← shape the consumer expects
-      remoteRef:
-        key: shared-homelab-secrets   # ← the ONE 1P item
-        property: dex-envoy-client-id # ← app-prefixed field in that item
-    - secretKey: client-secret
-      remoteRef:
-        key: shared-homelab-secrets
-        property: dex-envoy-client-secret
-```
+New concerns get new items — do not overload `shared-homelab-secrets`
+with things that have a different rotation cadence or blast radius
+from app-DB-password refreshes.
 
-Naming conventions for fields on the shared 1P item that feed a
-projection:
+Two projection strategies:
 
-- Prefix with the app/consumer (`dex-envoy-`, `plane-`, `grafana-`).
-- Keep kebab-case regardless of what the consumer's expected key
-  looks like — the projection ExternalSecret handles the translation.
-- Never overload a generic label like `client-id` on the 1P item —
-  it'll collide the moment a second consumer wants an OIDC client.
+- **Item has exactly the shape the consumer expects** → use
+  `dataFrom.extract`. One-line manifest, adding a field in 1P
+  automatically appears in the Secret. See
+  `infra/kustomize/dex/externalsecret-envoy-client.yaml` — the
+  `gateway-homelab-auth` item today holds literal `client-id` and
+  `client-secret` fields, extracted verbatim.
 
-Rotation is still 1P-item-centric: edit the field in 1P, force-sync
-the projecting ExternalSecret, restart the consumer pod.
+- **Item aggregates multiple consumers** (e.g. `shared-homelab-secrets`
+  with `dex-envoy-client-id` alongside `n8n-db-password`) → use
+  explicit `data:` blocks with `remoteRef.property` to remap the
+  1P field label to the consumer-expected key name. Field labels on
+  the item stay app-prefixed (`dex-envoy-*`, `plane-*`, `grafana-*`)
+  to avoid collisions.
 
 Consumers that follow this sub-pattern today:
 
-| Namespace / Secret       | Shape (consumer expects)     | Shared 1P fields consumed                        |
-| ------------------------ | ---------------------------- | ------------------------------------------------ |
-| `gateway/dex-client-envoy` | `client-id`, `client-secret` | `dex-envoy-client-id`, `dex-envoy-client-secret` |
+| Namespace / Secret         | Shape (consumer expects)     | 1P item                | 1P fields consumed |
+| -------------------------- | ---------------------------- | ---------------------- | ------------------ |
+| `gateway/dex-client-envoy` | `client-id`, `client-secret` | `gateway-homelab-auth` | `client-id`, `client-secret` (dataFrom.extract) |
 
 More entries land here as the plane / grafana / google-oauth-client
 migrations happen.
