@@ -3,8 +3,10 @@ kind: Kustomization
 
 namespace: monitoring
 
-resources:
-  - certificate.yaml
+resources: []
+  # certificate.yaml removed 2026-07-04: prometheus terminates TLS at the
+  # shared Gateway (gateway/public) via wildcard-62a-quanianitis-com-tls, so a
+  # per-app cert was never actually consumed by any Pod/Gateway/HTTPRoute.
   # httproute.yaml intentionally omitted: prometheus is NOT exposed via the
   # public Gateway / frpc tunnel. Ian's policy is that any host whose
   # /oauth2/callback URI is not registered in Google Console must not be

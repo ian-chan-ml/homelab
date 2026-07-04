@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: monitoring
 
 resources:
-  - certificate.yaml
   - httproute.yaml
 
 helmCharts:
