@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Single-node self-hosted Ray "cluster" without the KubeRay operator.
+# The head pod is also the (only) worker: it owns the node's GPU.
+# To add real workers later, add a second Deployment that runs
+# `ray start --address=ray-head:6379 --num-gpus=<n> --block`.
+
+namespace: mlops
+
+resources:
+  - head.yaml

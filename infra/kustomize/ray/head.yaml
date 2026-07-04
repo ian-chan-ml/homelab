@@ -1,0 +1,138 @@
+---
+# Headless Service used by ray workers to reach the head via a stable DNS name.
+# Also exposes the dashboard (8265) and Ray client (10001) as ClusterIP for
+# in-cluster access. Port-forward from outside; no Gateway/HTTPRoute yet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-head
+  labels:
+    app.kubernetes.io/name: ray
+    app.kubernetes.io/component: head
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ray
+    app.kubernetes.io/component: head
+  ports:
+    - name: gcs
+      port: 6379
+      targetPort: 6379
+    - name: client
+      port: 10001
+      targetPort: 10001
+    - name: dashboard
+      port: 8265
+      targetPort: 8265
+    - name: serve
+      port: 8000
+      targetPort: 8000
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-head
+  labels:
+    app.kubernetes.io/name: ray
+    app.kubernetes.io/component: head
+spec:
+  # Single replica: Ray head is stateful (GCS lives in-process) and this is a
+  # single-node homelab. Do not scale this up.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ray
+      app.kubernetes.io/component: head
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ray
+        app.kubernetes.io/component: head
+    spec:
+      # Required for the nvidia device plugin to inject the GPU into the
+      # container. Matches the runtime class already registered on the node.
+      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: ray-head
+          # Pinned tag. `-py311-gpu` = Ray on CUDA base with Python 3.11.
+          # Bump deliberately; do not use :latest.
+          image: rayproject/ray:2.40.0-py311-gpu
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              # Foreground the head so the container lifecycle == ray lifecycle.
+              exec ray start \
+                --head \
+                --node-ip-address=$(POD_IP) \
+                --port=6379 \
+                --dashboard-host=0.0.0.0 \
+                --dashboard-port=8265 \
+                --ray-client-server-port=10001 \
+                --metrics-export-port=8080 \
+                --num-cpus=4 \
+                --num-gpus=1 \
+                --block
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Ray refuses to start with < ~256MB /dev/shm; we mount a bigger
+            # tmpfs below, but this suppresses the warning when it is smaller.
+            - name: RAY_DISABLE_DOCKER_CPU_WARNING
+              value: "1"
+          ports:
+            - name: gcs
+              containerPort: 6379
+            - name: client
+              containerPort: 10001
+            - name: dashboard
+              containerPort: 8265
+            - name: serve
+              containerPort: 8000
+            - name: metrics
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "6"
+              memory: "10Gi"
+              # GPU limit must equal request; k8s enforces this for extended
+              # resources.
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: ray-tmp
+              mountPath: /tmp/ray
+      volumes:
+        # Ray uses /dev/shm for the object store's shared-memory plasma
+        # allocator. Default docker /dev/shm (64Mi) is too small.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+        # Session dir; ephemeral is fine for a homelab head that we can rebuild.
+        - name: ray-tmp
+          emptyDir: {}

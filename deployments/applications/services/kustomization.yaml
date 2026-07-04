@@ -12,3 +12,4 @@ resources:
   - duitku.yaml
   - n8n.yaml
   - plex.yaml
+  - ray.yaml
