@@ -318,9 +318,14 @@ one item, many fields                one manifest, dataFrom.extract
   (`firefly-db-password`, `n8n-encryption-key`) — they survive env-var
   translation and don't collide across apps.
 - **ExternalSecret:** `infra/kustomize/external-secrets/shared-homelab-secrets.yaml`.
-  Uses `dataFrom.extract` so **adding a new field in 1Password
-  automatically appears in the reflected Secret** with no manifest
-  change. Refresh interval is 1h; force a refresh with
+  Uses **explicit `data:` blocks** (not `dataFrom.extract`) so only the
+  fields listed in the manifest are projected into the reflected
+  Secret. This prevents 1Password built-in fields on
+  `--category=login` items (`username`, `password`, `notesPlain`) from
+  being fanned out to every namespace. Adding a new key therefore
+  requires an edit to this manifest — deterministic, and safer than
+  auto-projecting arbitrary 1P fields. Refresh interval is 1h; force a
+  refresh with
   `kubectl annotate externalsecret -n external-secrets shared-homelab-secrets
   force-sync=$(date +%s) --overwrite`.
 - **Reflector:** `infra/kustomize/reflector/` (chart
@@ -357,8 +362,18 @@ per-key `secretKeyRef` blocks.
      --vault quanianitis.com \
      "new-key-label[password]=<value>"
    ```
-2. Wait ≤1h (or force-sync — see above). The reflected Secret picks up
-   the new key in every namespace.
+2. Add a matching `data:` entry to
+   `infra/kustomize/external-secrets/shared-homelab-secrets.yaml`:
+   ```yaml
+   - secretKey: new-key-label
+     remoteRef:
+       key: shared-homelab-secrets
+       property: new-key-label
+   ```
+   Commit and push. Argo reconciles; the ExternalSecret picks up the
+   new field on the next refresh (≤1h — force with the annotate
+   command above). The reflected Secret then carries the new key in
+   every namespace.
 3. Reference the key from the consumer manifest via `secretKeyRef`.
 
 ### 1Password item schema (Phase 2 migration target)
@@ -484,12 +499,15 @@ from app-DB-password refreshes.
 
 Two projection strategies:
 
-- **Item has exactly the shape the consumer expects** → use
-  `dataFrom.extract`. One-line manifest, adding a field in 1P
-  automatically appears in the Secret. See
+- **Item has exactly the shape the consumer expects** → use explicit
+  `data:` blocks that project only the consumer-required keys. Avoid
+  `dataFrom.extract`: 1P login-category items carry built-in
+  `username`/`password`/`notesPlain` fields that would otherwise leak
+  into the projected Secret. See
   `infra/kustomize/dex/externalsecret-envoy-client.yaml` — the
-  `gateway-homelab-auth` item today holds literal `client-id` and
-  `client-secret` fields, extracted verbatim.
+  `gateway-homelab-auth` item holds `client-id` and `client-secret`
+  fields plus login-category cruft; only the two named fields are
+  projected.
 
 - **Item aggregates multiple consumers** (e.g. `shared-homelab-secrets`
   with `dex-envoy-client-id` alongside `n8n-db-password`) → use
@@ -502,7 +520,7 @@ Consumers that follow this sub-pattern today:
 
 | Namespace / Secret         | Shape (consumer expects)     | 1P item                | 1P fields consumed |
 | -------------------------- | ---------------------------- | ---------------------- | ------------------ |
-| `gateway/dex-client-envoy` | `client-id`, `client-secret` | `gateway-homelab-auth` | `client-id`, `client-secret` (dataFrom.extract) |
+| `gateway/dex-client-envoy` | `client-id`, `client-secret` | `gateway-homelab-auth` | `client-id`, `client-secret` (explicit `data:`) |
 
 More entries land here as the plane / grafana / google-oauth-client
 migrations happen.

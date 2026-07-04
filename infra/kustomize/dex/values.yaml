@@ -16,6 +16,18 @@ image:
 config:
   issuer: https://auth.62a.quanianitis.com
 
+  # storage=memory is intentional for this single-node homelab:
+  #   - No dex CRDs to bootstrap, no persistent volume, no schema
+  #     migrations on upgrade.
+  #   - Cost: dex regenerates its OIDC signing keys on every pod
+  #     restart, so any browser session still holding an id_token
+  #     issued by the old signing key gets a JWKS `kid` mismatch on
+  #     next request through Envoy and must re-login. Acceptable
+  #     given ~1 active user.
+  # To eliminate the re-login cost, switch to `type: kubernetes` with
+  # `config.inCluster: true` AND install the dex CRDs
+  # (https://github.com/dexidp/dex/tree/master/examples/k8s). The
+  # chart's default RBAC already covers `dex.coreos.com/*`.
   storage:
     type: memory
 
