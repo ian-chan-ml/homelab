@@ -1,14 +1,26 @@
-# Listener-scoped SecurityPolicy for the `inbox` listener of
+# Listener-scoped SecurityPolicy shared across the api-key surface of
 # Gateway `public`. Enforces X-API-Key auth at L7 for every route
-# attached via `parentRefs[].sectionName: inbox`.
+# attached via `parentRefs[].sectionName: {inbox, ray-api}`.
 #
-# Specificity: this SP attaches to a Gateway listener (section), which
+# The name stays `inbox-apikey` for historical reasons; conceptually
+# this is "the api-key auth policy for non-browser callers". It
+# currently protects two listeners:
+#   - inbox   → inbox.62a.quanianitis.com     (Cloudflare Email Worker,
+#                                              other webhook consumers)
+#   - ray-api → ray-api.62a.quanianitis.com  (Ray dashboard REST API:
+#                                              Job Submission, State API)
+# Both share the `gateway-api-key` Secret credential set; add a new
+# key entry to that Secret when you want a distinct credential for a
+# new consumer (all keys in the Secret authenticate equally, but the
+# matched key name is forwarded upstream as x-client-id for audit).
+#
+# Specificity: this SP attaches to Gateway listeners (section), which
 # beats the gateway-wide `public-oidc` SP in EG's precedence
 # (listener > gateway). public-oidc continues to apply to the `https`
-# listener; on `inbox` it's overridden and gets a
-# `PolicyConditionOverridden: true` status pointing to [inbox] - that
-# is expected, see internal/gatewayapi/securitypolicy.go in EG source
-# (getOverriddenTargetsMessageForGateway).
+# listener; on `inbox` and `ray-api` it's overridden and gets a
+# `PolicyConditionOverridden: true` status pointing to those sections
+# - that is expected, see internal/gatewayapi/securitypolicy.go in EG
+# source (getOverriddenTargetsMessageForGateway).
 #
 # Sanitize strips the X-API-Key header before forwarding, so the
 # upstream pod never logs the credential. forwardClientIDHeader exposes
@@ -30,6 +42,10 @@ spec:
       kind: Gateway
       name: public
       sectionName: inbox
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      sectionName: ray-api
   apiKeyAuth:
     credentialRefs:
       - group: ""

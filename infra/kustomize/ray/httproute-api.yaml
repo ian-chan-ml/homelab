@@ -1,0 +1,50 @@
+# Gateway-API HTTPRoute for the Ray HTTP API (dashboard REST surface
+# on port 8265: Job Submission API, State API, Serve control plane).
+#
+# Attaches to the `ray-api` listener of Gateway `public` via
+# parentRefs.sectionName, which means this route inherits the
+# listener-scoped `inbox-apikey` SecurityPolicy (X-API-Key against
+# the `gateway-api-key` Secret) instead of the gateway-wide
+# `public-oidc` OAuth. Programmatic Ray clients can't complete an
+# OIDC redirect; an API key is the minimum-viable equivalent.
+#
+# Hostname `ray-api.62a.quanianitis.com` matches the ray-api listener
+# exactly. The wildcard `https` listener (`*.62a.quanianitis.com`)
+# also covers this hostname, but per Gateway-API more-specific-wins,
+# requests dispatch to `ray-api` first. The sectionName attachment
+# also ensures this route only appears under the ray-api filter chain.
+#
+# The dashboard UI lives on the same backend port (8265) at
+# `ray-ctrl.62a.quanianitis.com` and is OIDC-gated instead. Two
+# hostnames, one backend, two auth modes: browsers get OIDC,
+# `ray job submit`-style clients present X-API-Key.
+#
+# Path prefix is `/` because the Ray dashboard mixes UI HTML and JSON
+# API endpoints on the same tree (/api/*, /logical/*, /state/api/*,
+# /serve/, ...). API-key callers only need the JSON paths; a browser
+# opened on this hostname will get 401s from EG since it cannot send
+# the header, which is the intended separation from ray-ctrl.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ray-api
+  labels:
+    app.kubernetes.io/name: ray
+    app.kubernetes.io/component: api
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      namespace: gateway
+      sectionName: ray-api
+  hostnames:
+    - ray-api.62a.quanianitis.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: ray-head
+          port: 8265

@@ -79,3 +79,27 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    # Dedicated listener for the Ray cluster's HTTP API (dashboard
+    # port 8265: Job Submission API, State API, Serve control plane).
+    # Shares the `inbox-apikey` SecurityPolicy with the `inbox`
+    # listener — same X-API-Key auth against the `gateway-api-key`
+    # Secret, just a different hostname. Routes bind via
+    # `parentRefs[].sectionName: ray-api`. TLS reuses the wildcard
+    # cert since `*.62a` covers `ray-api.62a`.
+    #
+    # Deliberately separate from `ray-ctrl.62a` (OIDC-gated browser
+    # dashboard): programmatic clients cannot complete an OIDC
+    # redirect, and a static X-API-Key is the minimum-viable option.
+    - name: ray-api
+      protocol: HTTPS
+      port: 443
+      hostname: "ray-api.62a.quanianitis.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            name: wildcard-62a-quanianitis-com-tls
+      allowedRoutes:
+        namespaces:
+          from: All

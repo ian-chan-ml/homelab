@@ -11,3 +11,4 @@ namespace: mlops
 resources:
   - head.yaml
   - httproute.yaml
+  - httproute-api.yaml
