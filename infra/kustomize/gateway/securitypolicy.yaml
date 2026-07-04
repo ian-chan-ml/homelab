@@ -9,12 +9,17 @@ spec:
       kind: Gateway
       name: public
   oidc:
+    # Dex is the OIDC IdP for this gateway. It federates upstream to
+    # Google (see infra/kustomize/dex/values.yaml → connectors[].google)
+    # so Google Console only holds one redirect URI now:
+    # https://auth.62a.quanianitis.com/callback. Per-hostname
+    # /oauth2/callback entries live in Dex's staticClients config in git.
     provider:
-      issuer: https://accounts.google.com
+      issuer: https://auth.62a.quanianitis.com
     clientIDRef:
-      name: google-oauth-client
+      name: dex-client-envoy
     clientSecret:
-      name: google-oauth-client
+      name: dex-client-envoy
     cookieDomain: 62a.quanianitis.com
     cookieNames:
       idToken: IdToken
@@ -26,10 +31,10 @@ spec:
       - profile
   jwt:
     providers:
-      - name: google
-        issuer: https://accounts.google.com
+      - name: dex
+        issuer: https://auth.62a.quanianitis.com
         remoteJWKS:
-          uri: https://www.googleapis.com/oauth2/v3/certs
+          uri: https://auth.62a.quanianitis.com/keys
         extractFrom:
           cookies:
             - IdToken
@@ -43,7 +48,7 @@ spec:
         action: Allow
         principal:
           jwt:
-            provider: google
+            provider: dex
             claims:
               - name: email
                 valueType: String
