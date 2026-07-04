@@ -9,6 +9,7 @@ resources:
   - gatewayclass.yaml
   - securitypolicy.yaml
   - securitypolicy-inbox.yaml
+  - securitypolicy-dex.yaml
   # gateway-api-key Secret is intentionally NOT declared in git. It is
   # rotated out-of-band and stored in 1Password vault `quanianitis.com`
   # under item `gateway-api-key-inbox`. Create / rotate it in-cluster with:

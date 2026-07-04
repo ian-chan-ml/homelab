@@ -1,0 +1,112 @@
+# Dex helm values. Full config keys documented at:
+#   https://dexidp.io/docs/reference/config/
+#   https://github.com/dexidp/helm-charts/blob/master/charts/dex/values.yaml
+#
+# Env-var interpolation ($VAR) in the config below is expanded by Dex
+# itself at startup (os.ExpandEnv on the config file). The env vars are
+# injected via envVars: below, sourced from Secrets managed by
+# ExternalSecrets pulling from 1Password.
+
+replicaCount: 1  # see storage note in kustomization.yaml
+
+image:
+  # chart appVersion is 2.44.0; pinning here for auditability
+  tag: v2.44.0
+
+config:
+  issuer: https://auth.62a.quanianitis.com
+
+  storage:
+    type: memory
+
+  web:
+    http: 0.0.0.0:5556
+
+  # Dex serves telemetry (metrics) on a separate port; enabled below.
+  telemetry:
+    http: 0.0.0.0:5558
+
+  # Skip Dex's own consent screen — Google already prompted the user,
+  # and every Envoy Gateway hostname is trusted (staticClient list
+  # below is the authorization boundary).
+  oauth2:
+    skipApprovalScreen: true
+
+  connectors:
+    - type: google
+      id: google
+      name: Google
+      config:
+        clientID: $DEX_GOOGLE_CLIENT_ID
+        clientSecret: $DEX_GOOGLE_CLIENT_SECRET
+        redirectURI: https://auth.62a.quanianitis.com/callback
+        # hostedDomains: []   # leave empty; email allowlist happens
+        #                     # at Envoy Gateway (jwt.claims), not here
+
+  staticClients:
+    - id: envoy-gateway
+      name: Envoy Gateway (public-oidc)
+      secretEnv: DEX_ENVOY_CLIENT_SECRET
+      # One entry per public HTTPRoute that binds to Gateway
+      # gateway/public listener `https` (the OIDC-guarded listener).
+      # Keep in sync with `kubectl get httproute -A` output; the
+      # `inbox` listener uses API-key auth and does NOT belong here.
+      redirectURIs:
+        - https://argocd.62a.quanianitis.com/oauth2/callback
+        - https://hubble.62a.quanianitis.com/oauth2/callback
+        - https://finance.62a.quanianitis.com/oauth2/callback
+        - https://grafana.62a.quanianitis.com/oauth2/callback
+        - https://kubernetes.62a.quanianitis.com/oauth2/callback
+        - https://n8n.62a.quanianitis.com/oauth2/callback
+        - https://mgmt.62a.quanianitis.com/oauth2/callback
+
+envVars:
+  - name: DEX_GOOGLE_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: google-oauth-client-dex
+        key: client-id
+  - name: DEX_GOOGLE_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: google-oauth-client-dex
+        key: client-secret
+  - name: DEX_ENVOY_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: dex-client-envoy
+        key: client-secret
+
+service:
+  ports:
+    http:
+      port: 5556
+    telemetry:
+      port: 5558
+
+# Chart-native ServiceMonitor is off (Prometheus operator isn't
+# installed the same way here — prometheus community chart in
+# monitoring/ scrapes via annotations/discovery). Add later if needed.
+serviceMonitor:
+  enabled: false
+
+# Sensible pod hygiene: non-root, read-only rootfs, no privileged.
+# Dex writes nothing to disk with storage.type=memory.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

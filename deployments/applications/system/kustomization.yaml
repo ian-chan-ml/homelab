@@ -20,3 +20,4 @@ resources:
   - gateway.yaml
   - envoy-gateway-repo.yaml
   - envoy-gateway.yaml
+  - dex.yaml

@@ -1,0 +1,73 @@
+# Dex is the in-cluster OIDC identity broker. It plays the role that IAP
+# plays on GKE and ALB-OIDC plays on ACK: the *single* OAuth 2.0 Web
+# Client registered with Google, so per-hostname `/oauth2/callback`
+# entries no longer need to be maintained by hand in the Google Console.
+#
+# Chain:
+#   user browser
+#     → Envoy Gateway (public-oidc SecurityPolicy, OIDC client of Dex)
+#     → Dex     (auth.62a.quanianitis.com, upstream OIDC client of Google)
+#     → Google  (issues id_token, only redirect URI is Dex's /callback)
+#
+# The Google Console for OAuth Client
+# `114204026619-8ompnjl85l2muhs6dr490tkkctrft6g6.apps.googleusercontent.com`
+# now only needs ONE redirect URI: https://auth.62a.quanianitis.com/callback
+# Every per-app callback moves into `staticClients[0].redirectURIs` below
+# in `values.yaml` — declarative, in git, syncs via Argo.
+#
+# Deployed into the `gateway` namespace alongside the Envoy Gateway
+# resources it serves. This lets the Dex-issued Secret `dex-client-envoy`
+# be referenced directly by both Dex (as the static client credential)
+# and by the Envoy `SecurityPolicy` (as `clientIDRef` / `clientSecret`)
+# without cross-namespace duplication.
+#
+# Prerequisites:
+#
+#   1. 1Password vault `quanianitis.com` contains an item titled
+#      `google-oauth-web-client` with fields:
+#        - client-id      (the …apps.googleusercontent.com value)
+#        - client-secret  (GOCSPX-…)
+#      These are the credentials Dex uses to talk *up* to Google.
+#      To seed from the current gateway/google-oauth-client Secret:
+#        kubectl -n gateway get secret google-oauth-client \
+#          -o jsonpath='{.data.client-id}'     | base64 -d
+#        kubectl -n gateway get secret google-oauth-client \
+#          -o jsonpath='{.data.client-secret}' | base64 -d
+#      and store both in 1Password under the field names above.
+#
+#   2. 1Password vault `quanianitis.com` contains an item titled
+#      `dex-client-envoy` with fields:
+#        - client-id      (constant string: envoy-gateway)
+#        - client-secret  (fresh 32-byte URL-safe random; generate once with
+#                          `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
+#      These are the credentials Envoy Gateway uses to talk *up* to Dex.
+#
+#   3. Google Console: add https://auth.62a.quanianitis.com/callback to
+#      the Authorized redirect URIs list on OAuth Client
+#      114204026619-…apps.googleusercontent.com. Leave the existing
+#      per-host callbacks in place until the SecurityPolicy migration
+#      has been verified end-to-end; then strip them out, leaving only
+#      the Dex callback.
+#
+# Storage: `type: memory` keeps Dex stateless. Trade-off is that all
+# Dex replicas would each hold their own session state, so the OAuth
+# code-flow callback must land on the same replica that started it.
+# We run replicaCount=1 for that reason. If you scale up, switch
+# storage to `type: kubernetes` (CRD-backed shared state).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: gateway
+
+resources:
+  - httproute.yaml
+  - externalsecret-google.yaml
+  - externalsecret-envoy-client.yaml
+
+helmCharts:
+  - name: dex
+    repo: https://charts.dexidp.io
+    version: 0.24.1        # appVersion 2.44.0
+    releaseName: dex
+    namespace: gateway
+    valuesFile: values.yaml

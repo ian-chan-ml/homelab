@@ -1,0 +1,26 @@
+# Public route for Dex's OIDC endpoints (/authorize, /token, /keys,
+# /.well-known/openid-configuration, /callback, /auth/*).
+#
+# Binds to the `dex` listener of Gateway gateway/public rather than the
+# gateway-wide `https` listener. Reason: the `https` listener carries
+# the gateway-wide `public-oidc` SecurityPolicy, which would create a
+# chicken-and-egg loop — Envoy would try to OIDC-authenticate requests
+# to Dex against Dex itself. The `dex` listener uses a listener-scoped
+# SecurityPolicy with no OIDC (see ../gateway/securitypolicy-dex.yaml),
+# matching the exemption pattern already used by `inbox`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: dex
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: public
+      namespace: gateway
+      sectionName: dex
+  hostnames:
+    - auth.62a.quanianitis.com
+  rules:
+    - backendRefs:
+        - name: dex
+          port: 5556

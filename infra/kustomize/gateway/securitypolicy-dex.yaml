@@ -1,0 +1,33 @@
+# Listener-scoped SecurityPolicy for the `dex` listener of Gateway
+# `public`. Intentionally has no auth blocks (no oidc, no jwt, no
+# apiKeyAuth, no extAuth, no authorization): the `dex` listener is
+# unauthenticated on purpose because Dex itself is the OIDC IdP —
+# gating access to its /authorize, /token, /keys,
+# /.well-known/openid-configuration and /callback endpoints against
+# itself would deadlock every login flow.
+#
+# Specificity: this SP attaches to a Gateway listener (section), which
+# beats the gateway-wide `public-oidc` SP in EG's precedence
+# (listener > gateway). public-oidc continues to apply to the `https`
+# listener; on `dex` it's overridden and gets a
+# `PolicyConditionOverridden: true` status pointing to [dex] — that is
+# expected, see internal/gatewayapi/securitypolicy.go in EG source
+# (getOverriddenTargetsMessageForGateway). Same pattern the `inbox`
+# listener already uses.
+#
+# This is analogous to how IAP on GKE exempts its own
+# `:handleRedirect` endpoint, or how ALB-OIDC on ACK exempts its
+# callback path — the identity broker's own surface must be reachable
+# unauthenticated by anyone in the world, otherwise login is
+# impossible.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: dex-noauth
+  namespace: gateway
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      sectionName: dex

@@ -1,16 +1,25 @@
-# Two listeners share port 443 with distinct hostnames. Per Gateway-API,
+# Three listeners share port 443 with distinct hostnames. Per Gateway-API,
 # more-specific hostname wins at request dispatch, so a request to
-# inbox.62a.quanianitis.com hits the `inbox` listener (not the wildcard).
+# inbox.62a.quanianitis.com hits the `inbox` listener (not the wildcard),
+# and auth.62a.quanianitis.com hits the `dex` listener.
 #
 # Each listener has its own SecurityPolicy:
-#   - https  ← public-oidc (Google OIDC + email allowlist)  [gateway-wide SP]
-#   - inbox  ← inbox-apikey (X-API-Key header)              [sectionName-scoped SP]
+#   - https  ← public-oidc  (Dex OIDC + email allowlist)   [gateway-wide SP]
+#   - inbox  ← inbox-apikey (X-API-Key header)             [sectionName-scoped SP]
+#   - dex    ← dex-noauth   (no auth; Dex is the IdP)      [sectionName-scoped SP]
 #
 # EG resolves SecurityPolicy specificity as listener > gateway, so the
-# inbox listener's apiKeyAuth overrides the gateway-wide OIDC for routes
-# attached via parentRefs[].sectionName: inbox. The public-oidc policy
-# gets a `PolicyConditionOverridden: true` status for [inbox] - that's
-# expected, not a bug.
+# inbox and dex listeners' SPs override the gateway-wide OIDC for routes
+# attached via parentRefs[].sectionName: inbox / dex. The public-oidc
+# policy gets a `PolicyConditionOverridden: true` status for [inbox, dex]
+# — that's expected, not a bug.
+#
+# The `dex` listener is unauthenticated on purpose: Dex is our OIDC IdP,
+# so authenticating access to its own /authorize, /token, /keys,
+# /.well-known/openid-configuration and /callback endpoints against
+# itself would deadlock login. This mirrors how GKE exposes IAP's
+# handleRedirect endpoint or how ALB exposes its OIDC callback path —
+# the identity broker's own surface must be reachable unauthenticated.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -41,6 +50,26 @@ spec:
       protocol: HTTPS
       port: 443
       hostname: "inbox.62a.quanianitis.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            name: wildcard-62a-quanianitis-com-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+    # Dedicated listener for Dex, the in-cluster OIDC IdP that fronts
+    # Google for all other public HTTPRoutes. Must be reachable
+    # unauthenticated because it *is* the authenticator — see
+    # securitypolicy-dex.yaml. Only the Dex HTTPRoute in this repo
+    # (infra/kustomize/dex/httproute.yaml) binds here via
+    # `parentRefs[].sectionName: dex`. TLS reuses the wildcard cert
+    # since `*.62a` covers `auth.62a`.
+    - name: dex
+      protocol: HTTPS
+      port: 443
+      hostname: "auth.62a.quanianitis.com"
       tls:
         mode: Terminate
         certificateRefs:
