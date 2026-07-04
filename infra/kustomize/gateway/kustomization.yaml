@@ -10,15 +10,19 @@ resources:
   - securitypolicy.yaml
   - securitypolicy-inbox.yaml
   - securitypolicy-dex.yaml
+  - externalsecret-homelab-auth.yaml
   # gateway-api-key Secret is intentionally NOT declared in git. It is
-  # rotated out-of-band and stored in 1Password vault `quanianitis.com`
-  # under item `gateway-api-key-inbox`. Create / rotate it in-cluster with:
-  #   op item get gateway-api-key-inbox --vault quanianitis.com \
-  #       --fields label=cf-worker --reveal \
-  #     | kubectl create secret generic gateway-api-key -n gateway \
-  #       --from-file=cf-worker=/dev/stdin --dry-run=client -o yaml \
-  #     | kubectl apply -f -
-  #   kubectl annotate secret -n gateway gateway-api-key \
-  #     argocd.argoproj.io/sync-options=Prune=false --overwrite
-  # Full workflow + planned ExternalSecret migration:
+  # the LEGACY kubectl-created Secret from the interim rotation
+  # workflow; the ESO-managed replacement is `gateway-homelab-auth`,
+  # projected by externalsecret-homelab-auth.yaml from 1P item
+  # `gateway-homelab-auth`. Both are currently listed in
+  # `inbox-apikey.spec.apiKeyAuth.credentialRefs` for a zero-downtime
+  # cut-over.
+  #
+  # Emergency manual rotation of the legacy Secret is still possible
+  # via the recipe in
   #   infra/kustomize/external-secrets/SECRET_ROTATION.md
+  # but the target end-state is: 1P field `apikey-cf-worker` in item
+  # `gateway-homelab-auth` is the source of truth; delete
+  # `gateway-api-key` Secret and its credentialRef once the migration
+  # is verified.

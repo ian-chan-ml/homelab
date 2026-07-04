@@ -268,7 +268,8 @@ Migrate Secret-by-Secret as each one is rotated. Tracking list:
 
 | Namespace / Secret              | Field(s)       | 1Password item                 | Status |
 | ------------------------------- | -------------- | ------------------------------ | ------ |
-| `gateway/gateway-api-key`       | `cf-worker`    | `gateway-api-key-inbox`        | rotated; kubectl-managed; ESO pending |
+| `gateway/gateway-api-key`       | `cf-worker`    | `gateway-api-key-inbox`        | LEGACY; kubectl-managed; scheduled for removal once `gateway-homelab-auth` ESO migration lands (see row below) |
+| `gateway/gateway-homelab-auth`  | `cf-worker` (K8s) ← `apikey-cf-worker` (1P) | `gateway-homelab-auth` | ESO manifest committed; awaiting Phase 2 population of 1P field `apikey-cf-worker`. Once populated, `inbox-apikey.credentialRefs` drops the legacy Secret and the legacy Secret is deleted. |
 | `duitku/gateway-api-key`        | `cf-worker`    | `gateway-api-key-inbox` (same) | rotated; kubectl-managed; remove once `gateway` ns Secret is the only one referenced |
 | `duitku/duitku` → `FIREFLY_PAT` | `FIREFLY_PAT`  | TODO                           | leaked inline (empty default), needs rotation when populated |
 | `firefly/...` → `APP_KEY`       | `APP_KEY`      | TODO                           | leaked inline             |
@@ -521,6 +522,7 @@ Consumers that follow this sub-pattern today:
 | Namespace / Secret         | Shape (consumer expects)     | 1P item                | 1P fields consumed |
 | -------------------------- | ---------------------------- | ---------------------- | ------------------ |
 | `gateway/dex-client-envoy` | `client-id`, `client-secret` | `gateway-homelab-auth` | `client-id`, `client-secret` (explicit `data:`) |
+| `gateway/gateway-homelab-auth` | any K8s data-key is a valid X-API-Key credential (see `inbox-apikey` SP); the audit trail records the matched key name via `forwardClientIDHeader: x-client-id`. Today: `cf-worker`. | `gateway-homelab-auth` | `apikey-cf-worker` → remapped to K8s data key `cf-worker` so upstream `x-client-id` audit logs stay stable during the migration from the legacy `gateway/gateway-api-key` Secret. Additional consumers get their own `apikey-<name>` field + K8s data key. |
 
 More entries land here as the plane / grafana / google-oauth-client
 migrations happen.
