@@ -128,8 +128,23 @@ spec:
           envFrom:
             - configMapRef:
                 name: n8n-app
-            - secretRef:
-                name: n8n-app
+          env:
+            # Secrets sourced from the cluster-wide `shared-homelab-secrets`
+            # Secret (see infra/kustomize/external-secrets/). Explicit
+            # per-key `secretKeyRef` (not `envFrom: secretRef`) so only
+            # the two keys this container needs land in its env — the
+            # shared Secret carries other apps' credentials too and we
+            # don't want them fanned into unrelated processes.
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shared-homelab-secrets
+                  key: n8n-encryption-key
+            - name: DB_POSTGRESDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shared-homelab-secrets
+                  key: n8n-db-password
           volumeMounts:
             - name: data
               mountPath: /home/node/.n8n

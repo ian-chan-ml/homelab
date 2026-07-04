@@ -124,8 +124,27 @@ spec:
           envFrom:
             - configMapRef:
                 name: firefly-app
-            - secretRef:
-                name: firefly-app
+          env:
+            # Secrets sourced from the cluster-wide `shared-homelab-secrets`
+            # Secret (see infra/kustomize/external-secrets/). Explicit
+            # per-key `secretKeyRef` (not `envFrom: secretRef`) so only
+            # the three keys this container needs land in its env — the
+            # shared Secret carries other apps' credentials too.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: shared-homelab-secrets
+                  key: firefly-app-key
+            - name: STATIC_CRON_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: shared-homelab-secrets
+                  key: firefly-static-cron-token
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shared-homelab-secrets
+                  key: firefly-db-password
           volumeMounts:
             - name: upload
               mountPath: /var/www/html/storage/upload

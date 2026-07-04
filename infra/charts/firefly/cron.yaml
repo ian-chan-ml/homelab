@@ -38,8 +38,8 @@ spec:
                 - name: STATIC_CRON_TOKEN
                   valueFrom:
                     secretKeyRef:
-                      name: firefly-app
-                      key: STATIC_CRON_TOKEN
+                      name: shared-homelab-secrets
+                      key: firefly-static-cron-token
               command:
                 - sh
                 - -c

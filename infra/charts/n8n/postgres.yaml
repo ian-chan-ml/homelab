@@ -24,6 +24,20 @@ spec:
       storage: 5Gi
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n8n-postgres
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/component: postgres
+data:
+  # Non-secret DB bootstrap env. POSTGRES_PASSWORD is not here — it
+  # comes from the cluster-wide shared Secret via secretKeyRef on the
+  # Deployment below.
+  POSTGRES_DB: "n8n"
+  POSTGRES_USER: "n8n"
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: n8n-postgres
@@ -73,9 +87,17 @@ spec:
               containerPort: 5432
               protocol: TCP
           envFrom:
-            - secretRef:
+            - configMapRef:
                 name: n8n-postgres
           env:
+            # POSTGRES_PASSWORD sourced from the cluster-wide shared
+            # Secret; POSTGRES_DB and POSTGRES_USER are non-secret and
+            # live in the n8n-postgres ConfigMap alongside PGDATA below.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shared-homelab-secrets
+                  key: n8n-db-password
             # Default PGDATA is /var/lib/postgresql/data which is also
             # the mountpoint; postgres refuses to init there because the
             # mount creates a non-empty lost+found. Subdir avoids that.

@@ -22,6 +22,20 @@ spec:
       storage: 5Gi
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: firefly-postgres
+  labels:
+    app.kubernetes.io/name: firefly-iii
+    app.kubernetes.io/component: postgres
+data:
+  # Non-secret DB bootstrap env. POSTGRES_PASSWORD is not here — it
+  # comes from the cluster-wide shared Secret via secretKeyRef on the
+  # Deployment below.
+  POSTGRES_DB: "firefly"
+  POSTGRES_USER: "firefly"
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: firefly-postgres
@@ -71,9 +85,14 @@ spec:
               containerPort: 5432
               protocol: TCP
           envFrom:
-            - secretRef:
+            - configMapRef:
                 name: firefly-postgres
           env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shared-homelab-secrets
+                  key: firefly-db-password
             # Default PGDATA is /var/lib/postgresql/data which is also the
             # mountpoint; postgres refuses to init there because mount
             # creates a non-empty lost+found. Subdir avoids that.
