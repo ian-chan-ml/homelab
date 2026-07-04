@@ -14,12 +14,6 @@ kind: JobSet
 metadata:
   name: cuda-smi
   namespace: mlops
-  annotations:
-    # The JobSet mutating webhook injects defaults (completionMode: Indexed,
-    # network.*, startupPolicy.*, failurePolicy.restartStrategy) that make
-    # client-side apply diff perpetually against an immutable spec.replicatedJobs.
-    # Server-side apply respects webhook-owned fields.
-    argocd.argoproj.io/sync-options: ServerSideApply=true
 spec:
   successPolicy:
     operator: All
