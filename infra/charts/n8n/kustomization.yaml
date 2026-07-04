@@ -1,0 +1,28 @@
+# n8n (self-hosted workflow automation).
+#
+# Manifest-based deployment, same reasoning as infra/charts/firefly: the
+# workload is small (one stateless web/worker process + one Postgres),
+# and the only "official" helm chart for n8n is a single-maintainer
+# community effort (8gears/n8n-helm-chart) that would need auditing on
+# every bump. Plain manifests are lower risk.
+#
+# Auth layering:
+# - The `public` Gateway in the gateway namespace enforces Google OIDC
+#   with an email allowlist via the `public-oidc` SecurityPolicy. Any
+#   HTTPRoute attached inherits that gate.
+# - n8n Community Edition has no SSO integration, so behind the OIDC
+#   gate the user completes n8n's own owner-setup on first visit and
+#   subsequent logins use n8n's built-in user management.
+#
+# Storage:
+# - Postgres: 5Gi longhorn PVC (see postgres.yaml).
+# - n8n binary data / node_modules / local files: 5Gi longhorn PVC
+#   mounted at /home/node/.n8n (see n8n.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - secret.yaml
+  - postgres.yaml
+  - n8n.yaml
+  - httproute.yaml

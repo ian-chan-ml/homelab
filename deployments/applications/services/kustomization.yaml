@@ -10,3 +10,4 @@ resources:
   - plane.yaml
   - firefly.yaml
   - duitku.yaml
+  - n8n.yaml
