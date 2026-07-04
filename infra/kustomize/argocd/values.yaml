@@ -55,7 +55,7 @@ configs:
     # Trade-off: real changes to `weight` or `matches` will also be hidden
     # from the diff view. If we ever adopt weighted routing (canary,
     # blue/green) or path-specific rules, revisit these expressions.
-    resource.customizations.ignoreDifferences.HTTPRoute.gateway.networking.k8s.io: |
+    resource.customizations.ignoreDifferences.gateway.networking.k8s.io_HTTPRoute: |
       jqPathExpressions:
         - .spec.parentRefs[]?.group
         - .spec.parentRefs[]?.kind
