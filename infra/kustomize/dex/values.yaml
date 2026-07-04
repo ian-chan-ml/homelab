@@ -64,12 +64,12 @@ envVars:
   - name: DEX_GOOGLE_CLIENT_ID
     valueFrom:
       secretKeyRef:
-        name: google-oauth-client-dex
+        name: google-oauth-client
         key: client-id
   - name: DEX_GOOGLE_CLIENT_SECRET
     valueFrom:
       secretKeyRef:
-        name: google-oauth-client-dex
+        name: google-oauth-client
         key: client-secret
   - name: DEX_ENVOY_CLIENT_SECRET
     valueFrom:

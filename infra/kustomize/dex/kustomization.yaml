@@ -19,41 +19,66 @@
 # resources it serves. This lets the Dex-issued Secret `dex-client-envoy`
 # be referenced directly by both Dex (as the static client credential)
 # and by the Envoy `SecurityPolicy` (as `clientIDRef` / `clientSecret`)
-# without cross-namespace duplication.
+# without cross-namespace duplication, AND lets Dex read the existing
+# `gateway/google-oauth-client` Secret directly for its upstream
+# Google connector — no separate copy needed.
 #
-# Prerequisites:
+# ---- Secrets: interim, out-of-band ---------------------------------
 #
-#   1. 1Password vault `quanianitis.com` contains an item titled
-#      `google-oauth-web-client` with fields:
-#        - client-id      (the …apps.googleusercontent.com value)
-#        - client-secret  (GOCSPX-…)
-#      These are the credentials Dex uses to talk *up* to Google.
-#      To seed from the current gateway/google-oauth-client Secret:
+# Both Secrets consumed by Dex are declared **outside git** for now
+# (same pattern as `gateway/gateway-api-key`, see
+# infra/kustomize/external-secrets/SECRET_ROTATION.md). They will
+# migrate to ExternalSecret + 1Password Connect in a follow-up once
+# the 1Password items are seeded.
+#
+#   1. `gateway/google-oauth-client` (ALREADY EXISTS)
+#      Was created out-of-band for the previous direct-to-Google OIDC
+#      SecurityPolicy. Same shape Dex needs. Nothing to do — just
+#      re-verify:
 #        kubectl -n gateway get secret google-oauth-client \
 #          -o jsonpath='{.data.client-id}'     | base64 -d
+#        # → 114204026619-…apps.googleusercontent.com
 #        kubectl -n gateway get secret google-oauth-client \
 #          -o jsonpath='{.data.client-secret}' | base64 -d
-#      and store both in 1Password under the field names above.
+#        # → GOCSPX-…
+#      Ensure the Prune=false annotation is set so Argo doesn't delete
+#      it once the old SecurityPolicy references disappear:
+#        kubectl annotate secret -n gateway google-oauth-client \
+#          argocd.argoproj.io/sync-options=Prune=false --overwrite
 #
-#   2. 1Password vault `quanianitis.com` contains an item titled
-#      `dex-client-envoy` with fields:
-#        - client-id      (constant string: envoy-gateway)
-#        - client-secret  (fresh 32-byte URL-safe random; generate once with
-#                          `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
-#      These are the credentials Envoy Gateway uses to talk *up* to Dex.
+#   2. `gateway/dex-client-envoy` (NEW, create once)
+#      Static client credential Dex issues to the Envoy Gateway
+#      public-oidc SecurityPolicy. Generate a fresh secret and apply:
+#        CLIENT_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32), end="")')
+#        kubectl create secret generic dex-client-envoy -n gateway \
+#          --from-literal=client-id=envoy-gateway \
+#          --from-literal=client-secret="$CLIENT_SECRET" \
+#          --dry-run=client -o yaml | kubectl apply -f -
+#        kubectl annotate secret -n gateway dex-client-envoy \
+#          argocd.argoproj.io/sync-options=Prune=false --overwrite
+#        unset CLIENT_SECRET
+#      The client-id string `envoy-gateway` MUST match
+#      staticClients[0].id in values.yaml. The client-secret value is
+#      never referenced elsewhere — Dex reads it via envVar, Envoy
+#      reads it via clientSecretRef, both point at this same Secret.
 #
-#   3. Google Console: add https://auth.62a.quanianitis.com/callback to
-#      the Authorized redirect URIs list on OAuth Client
+# ---- Google Console prereq -----------------------------------------
+#
+#   3. Add https://auth.62a.quanianitis.com/callback to the Authorized
+#      redirect URIs list on OAuth Client
 #      114204026619-…apps.googleusercontent.com. Leave the existing
 #      per-host callbacks in place until the SecurityPolicy migration
 #      has been verified end-to-end; then strip them out, leaving only
 #      the Dex callback.
 #
-# Storage: `type: memory` keeps Dex stateless. Trade-off is that all
-# Dex replicas would each hold their own session state, so the OAuth
-# code-flow callback must land on the same replica that started it.
-# We run replicaCount=1 for that reason. If you scale up, switch
-# storage to `type: kubernetes` (CRD-backed shared state).
+# ---- Storage note --------------------------------------------------
+#
+# `storage.type: memory` in values.yaml keeps Dex stateless. Trade-off
+# is that all Dex replicas would each hold their own OAuth code-flow
+# session state, so the callback must land on the same replica that
+# started the flow. We run replicaCount=1 for that reason. If you
+# scale up, switch storage to `type: kubernetes` (CRD-backed shared
+# state).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -61,8 +86,6 @@ namespace: gateway
 
 resources:
   - httproute.yaml
-  - externalsecret-google.yaml
-  - externalsecret-envoy-client.yaml
 
 helmCharts:
   - name: dex
