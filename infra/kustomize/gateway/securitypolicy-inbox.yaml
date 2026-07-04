@@ -9,10 +9,13 @@
 #                                              other webhook consumers)
 #   - ray-api → ray-api.62a.quanianitis.com  (Ray dashboard REST API:
 #                                              Job Submission, State API)
-# Both share the `gateway-api-key` Secret credential set; add a new
-# key entry to that Secret when you want a distinct credential for a
-# new consumer (all keys in the Secret authenticate equally, but the
-# matched key name is forwarded upstream as x-client-id for audit).
+# Both share the ESO-managed `gateway-homelab-auth` Secret credential
+# set (see externalsecret-homelab-auth.yaml). To add a distinct
+# credential for a new consumer, add a new `apikey-<name>` field to
+# the 1P item `gateway-homelab-auth`, add a matching `data:` entry to
+# the ExternalSecret, and it becomes a valid X-API-Key value here (all
+# data keys in the Secret authenticate equally, but the matched key
+# name is forwarded upstream as `x-client-id` for audit).
 #
 # Specificity: this SP attaches to Gateway listeners (section), which
 # beats the gateway-wide `public-oidc` SP in EG's precedence
@@ -24,8 +27,8 @@
 #
 # Sanitize strips the X-API-Key header before forwarding, so the
 # upstream pod never logs the credential. forwardClientIDHeader exposes
-# the matched Secret-data key (e.g. `cf-worker`) to the upstream as
-# `x-client-id` for audit logging.
+# the matched Secret-data key (e.g. `apikey-gateway`) to the upstream
+# as `x-client-id` for audit logging.
 #
 # Defence-in-depth: any consumer of this listener is free to add its
 # own per-pod authn on top (e.g. duitku-webhook enforces HMAC-SHA256
@@ -48,34 +51,20 @@ spec:
       sectionName: ray-api
   apiKeyAuth:
     credentialRefs:
-      # Legacy Secret, kubectl-created out-of-band per the interim
-      # workflow in SECRET_ROTATION.md. Retained during the ESO
-      # migration so callers already authenticating against the
-      # `cf-worker` value (the Cloudflare Email Worker) don't see a
-      # 401 window while they are re-pointed at the new value in
-      # `gateway-homelab-auth`. Dropped in Phase 4 of the migration,
-      # after `wrangler secret put` has updated the CF Worker to
-      # present the new value.
-      - group: ""
-        kind: Secret
-        name: gateway-api-key
       # ESO-managed Secret, sourced from 1P item `gateway-homelab-auth`
       # via infra/kustomize/gateway/externalsecret-homelab-auth.yaml.
-      # This is the intended end state. Envoy Gateway treats the union
-      # of all data keys across every Secret in this list as the valid
-      # X-API-Key credential set — whichever value the caller presents,
-      # if it matches ANY listed Secret's data-key value, the request is
-      # authenticated. `forwardClientIDHeader: x-client-id` reports the
-      # matched key NAME upstream (not the value), so requests
-      # authenticated via this Secret log `x-client-id: apikey-gateway`
-      # and requests via the legacy Secret log `x-client-id: cf-worker`.
+      # Envoy Gateway treats every data key in this Secret as a valid
+      # X-API-Key credential; the matched key name is reported upstream
+      # via `forwardClientIDHeader: x-client-id`.
       #
-      # Precondition: this Secret MUST exist in-cluster before adding
-      # it here — Envoy Gateway rejects the whole SecurityPolicy as
-      # Accepted=False reason=Invalid on any missing credentialRef, and
-      # an Invalid SP fails OPEN (unauthenticated traffic reaches the
-      # backend). Verified live: ExternalSecret Ready=SecretSynced,
-      # target Secret ownerReferences[0]=ExternalSecret/gateway-homelab-auth.
+      # Precondition (still relevant if this file is ever cloned to
+      # protect a new listener): the referenced Secret MUST exist in
+      # the cluster before this SP is applied. Envoy Gateway rejects
+      # the whole SecurityPolicy as `Accepted=False reason=Invalid` on
+      # any missing credentialRef, and an Invalid SP fails OPEN
+      # (unauthenticated traffic reaches the backend, no 401). See
+      # infra/kustomize/external-secrets/SECRET_ROTATION.md § Hard
+      # rules for the observed regression.
       - group: ""
         kind: Secret
         name: gateway-homelab-auth

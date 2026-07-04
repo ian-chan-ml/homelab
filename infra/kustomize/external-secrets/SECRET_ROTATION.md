@@ -268,9 +268,8 @@ Migrate Secret-by-Secret as each one is rotated. Tracking list:
 
 | Namespace / Secret              | Field(s)       | 1Password item                 | Status |
 | ------------------------------- | -------------- | ------------------------------ | ------ |
-| `gateway/gateway-api-key`       | `cf-worker`    | `gateway-api-key-inbox`        | LEGACY; kubectl-managed; scheduled for removal once `gateway-homelab-auth` ESO migration completes Phase 4 (see row below) |
-| `gateway/gateway-homelab-auth`  | `apikey-gateway` (K8s) ← `apikey-gateway` (1P) | `gateway-homelab-auth` | ESO manifest committed. Phase 2 populated (1P field `apikey-gateway` set out-of-band). Phase 3 will add this Secret to `inbox-apikey.credentialRefs` alongside the legacy Secret, once ES sync is verified. Phase 4 drops the legacy Secret. |
-| `duitku/gateway-api-key`        | `cf-worker`    | `gateway-api-key-inbox` (same) | rotated; kubectl-managed; remove once `gateway` ns Secret is the only one referenced |
+| `gateway/gateway-homelab-auth`  | `apikey-gateway` (K8s) ← `apikey-gateway` (1P) | `gateway-homelab-auth` | **ESO-managed (end state).** Referenced by `inbox-apikey.credentialRefs` as the sole X-API-Key credential source for the `inbox` and `ray-api` listeners. Migration complete: the legacy `gateway/gateway-api-key` Secret has been deleted and its `credentialRef` dropped. |
+| `duitku/gateway-api-key`        | `cf-worker`    | `gateway-api-key-inbox` (same) | rotated; kubectl-managed; scheduled for migration to `shared-homelab-secrets` or its own ESO manifest — no longer required to match anything in `gateway` ns since the migration completed |
 | `duitku/duitku` → `FIREFLY_PAT` | `FIREFLY_PAT`  | TODO                           | leaked inline (empty default), needs rotation when populated |
 | `firefly/...` → `APP_KEY`       | `APP_KEY`      | TODO                           | leaked inline             |
 | `plane/...` → `SECRET_KEY`      | `SECRET_KEY`   | TODO                           | leaked inline             |

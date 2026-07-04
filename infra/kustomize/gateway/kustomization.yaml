@@ -11,18 +11,18 @@ resources:
   - securitypolicy-inbox.yaml
   - securitypolicy-dex.yaml
   - externalsecret-homelab-auth.yaml
-  # gateway-api-key Secret is intentionally NOT declared in git. It is
-  # the LEGACY kubectl-created Secret from the interim rotation
-  # workflow; the ESO-managed replacement is `gateway-homelab-auth`,
-  # projected by externalsecret-homelab-auth.yaml from 1P item
-  # `gateway-homelab-auth`. Both are currently listed in
-  # `inbox-apikey.spec.apiKeyAuth.credentialRefs` for a zero-downtime
-  # cut-over.
+  # The X-API-Key credential for the `inbox` and `ray-api` listeners
+  # is now ESO-managed via `externalsecret-homelab-auth.yaml`, sourced
+  # from 1P item `gateway-homelab-auth` field `apikey-gateway` in
+  # vault `quanianitis.com`. The target Secret `gateway-homelab-auth`
+  # is created and refreshed by ExternalSecrets Operator with
+  # `creationPolicy: Owner` — do not `kubectl create` or `kubectl
+  # apply` it directly.
   #
-  # Emergency manual rotation of the legacy Secret is still possible
-  # via the recipe in
-  #   infra/kustomize/external-secrets/SECRET_ROTATION.md
-  # but the target end-state is: 1P field `apikey-cf-worker` in item
-  # `gateway-homelab-auth` is the source of truth; delete
-  # `gateway-api-key` Secret and its credentialRef once the migration
-  # is verified.
+  # The legacy `gateway-api-key` Secret (kubectl-created out-of-band
+  # during the interim rotation workflow described in
+  # `infra/kustomize/external-secrets/SECRET_ROTATION.md`) has been
+  # retired as of Phase 4. Every prior consumer of the `cf-worker`
+  # data-key value has been re-pointed at `apikey-gateway`, the
+  # Secret has been deleted from the cluster, and the credentialRef
+  # in `securitypolicy-inbox.yaml` no longer names it.
