@@ -23,15 +23,9 @@
 # `gateway/google-oauth-client` Secret directly for its upstream
 # Google connector — no separate copy needed.
 #
-# ---- Secrets: interim, out-of-band ---------------------------------
+# ---- Secrets ------------------------------------------------------
 #
-# Both Secrets consumed by Dex are declared **outside git** for now
-# (same pattern as `gateway/gateway-api-key`, see
-# infra/kustomize/external-secrets/SECRET_ROTATION.md). They will
-# migrate to ExternalSecret + 1Password Connect in a follow-up once
-# the 1Password items are seeded.
-#
-#   1. `gateway/google-oauth-client` (ALREADY EXISTS)
+#   1. `gateway/google-oauth-client` (OUT-OF-BAND, unchanged)
 #      Was created out-of-band for the previous direct-to-Google OIDC
 #      SecurityPolicy. Same shape Dex needs. Nothing to do — just
 #      re-verify:
@@ -45,18 +39,34 @@
 #      it once the old SecurityPolicy references disappear:
 #        kubectl annotate secret -n gateway google-oauth-client \
 #          argocd.argoproj.io/sync-options=Prune=false --overwrite
+#      Followup: migrate this to its own ExternalSecret pointed at 1P
+#      item `google-oauth-client` — same pattern as dex-client-envoy
+#      below. Kept out-of-band today because the 1P item isn't seeded.
 #
-#   2. `gateway/dex-client-envoy` (NEW, create once)
+#   2. `gateway/dex-client-envoy` (ExternalSecret + 1Password)
 #      Static client credential Dex issues to the Envoy Gateway
-#      public-oidc SecurityPolicy. Generate a fresh secret and apply:
-#        CLIENT_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32), end="")')
-#        kubectl create secret generic dex-client-envoy -n gateway \
-#          --from-literal=client-id=envoy-gateway \
-#          --from-literal=client-secret="$CLIENT_SECRET" \
-#          --dry-run=client -o yaml | kubectl apply -f -
-#        kubectl annotate secret -n gateway dex-client-envoy \
-#          argocd.argoproj.io/sync-options=Prune=false --overwrite
-#        unset CLIENT_SECRET
+#      public-oidc SecurityPolicy. Managed by ESO — see
+#      externalsecret-envoy-client.yaml. Sourced from the SHARED 1P
+#      item `shared-homelab-secrets` in vault `quanianitis.com`,
+#      fields `dex-envoy-client-id` + `dex-envoy-client-secret`. This
+#      ExternalSecret projects those two fields into a Secret shaped
+#      the way Envoy Gateway's SecurityPolicy expects (`client-id` /
+#      `client-secret` — hard-coded key names, no override). One 1P
+#      item for the whole cluster; app-specific fields live inside it.
+#
+#      Add the two fields to the shared 1P item from the current live
+#      values with:
+#        op item edit shared-homelab-secrets --vault quanianitis.com \
+#          "dex-envoy-client-id[text]=$(kubectl get secret -n gateway dex-client-envoy \
+#              -o jsonpath='{.data.client-id}' | base64 -d)" \
+#          "dex-envoy-client-secret[password]=$(kubectl get secret -n gateway dex-client-envoy \
+#              -o jsonpath='{.data.client-secret}' | base64 -d)"
+#      then delete the out-of-band Secret so ESO can create it fresh
+#      with itself as owner:
+#        kubectl delete secret -n gateway dex-client-envoy
+#      (Brief auth gap on the public-oidc listener — ~seconds while
+#      ESO reconciles; schedule accordingly.)
+#
 #      The client-id string `envoy-gateway` MUST match
 #      staticClients[0].id in values.yaml. The client-secret value is
 #      never referenced elsewhere — Dex reads it via envVar, Envoy
@@ -86,6 +96,7 @@ namespace: gateway
 
 resources:
   - httproute.yaml
+  - externalsecret-envoy-client.yaml
 
 helmCharts:
   - name: dex
