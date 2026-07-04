@@ -21,6 +21,9 @@ spec:
     maxRestarts: 0
   replicatedJobs:
     - name: smi
+      # groupName defaults to "default" via the JobSet mutating webhook; declare it
+      # explicitly here so ArgoCD doesn't loop trying to patch an immutable field.
+      groupName: default
       replicas: 1
       template:
         spec:
