@@ -56,6 +56,47 @@
         mode: "0644"
       register: _server_config_result
 
+# Graceful Node Shutdown (KEP-2000) needs the KubeletConfiguration file below
+# AND a matching InhibitDelayMaxSec on systemd-logind. Both fields go here
+# because they must stay consistent: if logind's max delay is shorter than
+# kubelet's shutdownGracePeriod, systemd yanks the inhibitor early and pods
+# get SIGKILLed alongside the iSCSI sessions holding their PVCs.
+# See ~/Documents/docs/lessons/kubelet-lifecycle.md section 6.
+- name: Setup kubelet configuration file (Graceful Node Shutdown)
+  when: kubelet_config_yaml is defined
+  block:
+    - name: Write KubeletConfiguration
+      ansible.builtin.copy:
+        content: "{{ kubelet_config_yaml }}"
+        dest: "/etc/rancher/k3s/kubelet.yaml"
+        mode: "0644"
+      register: _kubelet_config_result
+
+- name: Configure systemd-logind inhibitor delay (for Graceful Node Shutdown)
+  when: logind_inhibit_delay_max_sec is defined
+  block:
+    - name: Make logind drop-in directory
+      ansible.builtin.file:
+        path: "/etc/systemd/logind.conf.d"
+        mode: "0755"
+        state: directory
+    - name: Write logind InhibitDelayMaxSec drop-in
+      ansible.builtin.copy:
+        content: |
+          # Managed by ~/Documents/homelab/k3s/inventory.yml.
+          # Must be >= kubelet shutdownGracePeriod, else systemd yanks the
+          # inhibitor lock before kubelet finishes evicting pods.
+          [Login]
+          InhibitDelayMaxSec={{ logind_inhibit_delay_max_sec }}
+        dest: "/etc/systemd/logind.conf.d/10-kubelet-inhibit-delay.conf"
+        mode: "0644"
+      register: _logind_dropin_result
+    - name: Restart systemd-logind if drop-in changed
+      when: _logind_dropin_result.changed
+      ansible.builtin.systemd:
+        name: systemd-logind
+        state: restarted
+
 - name: Init first server node
   when: inventory_hostname == groups[server_group][0] or ansible_host == groups[server_group][0]
   block:
@@ -107,7 +148,7 @@
       when:
         - ansible_facts.services['k3s.service'] is defined
         - ansible_facts.services['k3s.service'].state == 'running'
-        - service_file_single.changed or service_file_ha.changed or _server_config_result.changed
+        - service_file_single.changed or service_file_ha.changed or _server_config_result.changed or (_kubelet_config_result is defined and _kubelet_config_result.changed)
       ansible.builtin.systemd:
         name: k3s
         daemon_reload: true

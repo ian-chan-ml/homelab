@@ -32,3 +32,20 @@ k3s_cluster:
       advertise-address: 192.168.1.50
       tls-san:
           - 100.100.62.1
+      kubelet-arg:
+          - "config=/etc/rancher/k3s/kubelet.yaml"
+
+    # Graceful Node Shutdown (KEP-2000). See lessons/kubelet-lifecycle.md.
+    # In k8s 1.33+ these fields are config-file-only; passing them as CLI flags
+    # (via kubelet-arg) makes k3s crash-loop with "unknown flag".
+    # Values: 90s total, 15s reserved for critical pods. Larger than GKE's
+    # 60/20 because Longhorn iSCSI volumes need extra time to detach cleanly.
+    kubelet_config_yaml: |
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      shutdownGracePeriod: 90s
+      shutdownGracePeriodCriticalPods: 15s
+
+    # Must be >= shutdownGracePeriod above. 30s buffer so systemd doesn't
+    # yank the inhibitor lock while kubelet is still evicting pods.
+    logind_inhibit_delay_max_sec: 120
