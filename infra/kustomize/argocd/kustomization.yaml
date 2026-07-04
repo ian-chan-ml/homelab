@@ -9,13 +9,10 @@ resources:
   - httproute.yaml
 
 helmCharts:
-  # Chart 10.0.0 ships Argo CD v3.4.4, which bumps k8s.io/api to v0.34.0 and
-  # adopts sigs.k8s.io/structured-merge-diff/v6. That is the version range
-  # where the Deployment OpenAPI schema gains `.status.terminatingReplicas`
-  # (added by k8s 1.33 / GA in 1.35), so structured-merge diffs against k8s
-  # 1.36 nodes stop failing with "field not declared in schema". Older 2.13.x
-  # was pinned to k8s.io/api v0.31.0 + structured-merge-diff/v4, which is what
-  # caused the ComparisonError storm that broke every Application's sync.
+  # Chart 10.0.0 ships Argo CD v3.4.4 by default. We override
+  # `global.image.tag` to v3.5.0-rc2 in values.yaml — see the comment there
+  # for the full rationale. Bump the chart version when a chart with
+  # appVersion >= v3.5.0 GA is published, and drop the image override.
   - name: argo-cd
     repo: https://argoproj.github.io/argo-helm
     version: 10.0.0

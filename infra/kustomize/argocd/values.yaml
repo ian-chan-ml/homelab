@@ -1,4 +1,18 @@
 fullnameOverride: argocd
+# Pin to v3.5.0-rc2 (pre-release, 2026-07-01) to pick up the k8s.io/api v0.35
+# client, which is the first version whose bundled OpenAPI schema knows about
+# `.status.terminatingReplicas` on Deployment (added by k8s 1.33, GA in 1.35).
+# Chart 10.0.0's appVersion is still v3.4.4 (k8s.io/api v0.34) which does NOT
+# have that field, so structured-merge diffs against our k8s 1.36 nodes fail
+# with a silent ComparisonError, leaving every Application whose resource tree
+# contains a Deployment stuck in an OutOfSync -> Synced -> OutOfSync oscillation.
+# Fix upstream is argoproj/argo-cd#25767, milestone v3.5. As of 2026-07-04 there
+# is no v3.5 GA and no helm chart shipping v3.5.x, so we override just the image
+# tag on the chart's default 10.0.0 render. Revert this override once a helm
+# chart with appVersion >= v3.5.0 is published.
+global:
+  image:
+    tag: v3.5.0-rc2
 crds:
   install: true
   keep: true
