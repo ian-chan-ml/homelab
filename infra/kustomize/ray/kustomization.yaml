@@ -10,3 +10,4 @@ namespace: mlops
 
 resources:
   - head.yaml
+  - httproute.yaml

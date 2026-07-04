@@ -1,0 +1,43 @@
+# Gateway-API HTTPRoute for the Ray dashboard.
+#
+# Attaches to the cluster-wide `public` Gateway `https` listener
+# (*.62a.quanianitis.com, wildcard TLS via `wildcard-62a-quanianitis-com-tls`).
+# The gateway-wide `public-oidc` SecurityPolicy applies automatically:
+# Dex → Google OIDC with an email allowlist. Same pattern as grafana,
+# argocd, and kubernetes-dashboard — Ray's dashboard is an admin UI and
+# belongs in that trust zone.
+#
+# The Ray dashboard (port 8265) speaks HTTP + WebSockets. Envoy Gateway
+# passes WebSockets through by default; no per-route filter needed.
+# XHR calls from the dashboard JS reuse the `IdToken` cookie because
+# `public-oidc.cookieDomain` is `62a.quanianitis.com`, which covers this
+# subdomain.
+#
+# Ray client (:10001, gRPC over TCP) and GCS (:6379) are NOT exposed via
+# this HTTPRoute. They stay ClusterIP; use port-forward or another pod
+# inside the cluster to talk to them. Exposing gRPC through an
+# OIDC-fronted HTTPRoute would just fail — no browser to complete the
+# redirect, no cookie to carry.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ray-dashboard
+  labels:
+    app.kubernetes.io/name: ray
+    app.kubernetes.io/component: dashboard
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      namespace: gateway
+  hostnames:
+    - ray-ctrl.62a.quanianitis.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: ray-head
+          port: 8265
