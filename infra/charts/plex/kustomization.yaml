@@ -1,0 +1,40 @@
+# Plex Media Server.
+#
+# Manifest-based deployment (no helm). The community "plex" helm chart
+# (k8s-at-home / bjw-s app-template) is heavy and pulls in a whole
+# templating framework for what is really one Deployment + one Service
+# + two PVCs. Plain manifests keep the surface small.
+#
+# Storage layout:
+# - Media library (movies/tv/music): local PersistentVolume bound to
+#   /data/plex/media on the HDD (/dev/sda1, ext4). Files live on disk
+#   as regular files (mp4, mkv, flac, ...) — you can `cp` them out,
+#   `ffprobe` them, mount the disk on another machine and read them.
+#   This is deliberate: no Longhorn for media, because Longhorn stores
+#   volumes as opaque block replicas under /data/longhorn/replicas/
+#   which are not user-readable without the CSI driver.
+# - Plex config (~/Library/Application Support/Plex Media Server):
+#   Longhorn PVC. This is Plex's internal SQLite DB + metadata cache +
+#   thumbnails; app-internal, fine to be opaque, and small enough that
+#   the block-replica overhead doesn't matter.
+# - Transcode scratch: emptyDir with sizeLimit, wiped on pod restart.
+#
+# Auth:
+# - Attached to the cluster-wide `public` Gateway `https` listener,
+#   which enforces Dex → Google OIDC + email allowlist via the
+#   `public-oidc` SecurityPolicy. Web UI at https://plex.62a.quanianitis.com
+#   works normally after Google login.
+# - Native Plex apps (iOS/tvOS/Android/Roku) cannot complete a browser
+#   OIDC redirect, so they will NOT be able to direct-connect to this
+#   hostname. They fall back to plex.tv relay (app.plex.tv). If you
+#   want native-app direct-connect, that's a follow-up: either bypass
+#   OIDC for Plex via a dedicated Gateway listener + X-Plex-Token auth
+#   at the edge, or expose a separate LoadBalancer Service on the LAN
+#   only. Documented in ~/claude-agent/logs/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - pv.yaml
+  - plex.yaml
+  - httproute.yaml

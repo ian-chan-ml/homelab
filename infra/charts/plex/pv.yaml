@@ -1,0 +1,52 @@
+# Local PersistentVolume for Plex media.
+#
+# Backed by /data/plex/media on the host — /data is /dev/sda1, a 1.8 TB
+# ext4 spinning disk. Files land on disk as regular files (Movies/*.mp4,
+# TV/<Show>/<Season>/*.mkv, ...). To extract: `cp /data/plex/media/...`
+# or mount /dev/sda1 anywhere; no CSI decoding required.
+#
+# Why a local PV (not longhorn, not local-path):
+# - Longhorn stores volumes as opaque block-image replicas. Files would
+#   be unrecoverable without the Longhorn engine — the exact opposite of
+#   what we want for a media library.
+# - The default `local-path` StorageClass allocates a random directory
+#   under /var/lib/rancher/k3s/storage on the root disk (nvme, 254 GB).
+#   Wrong tier for a media library and would fill the root FS.
+# - A hand-written local PV lets us point at /data/plex/media exactly
+#   and keep the mount stable across pod restarts. storageClassName is
+#   set to an unused name so no dynamic provisioner touches it; the PVC
+#   binds by name via `volumeName`.
+#
+# Node affinity pins this PV to the single k3s node. When the cluster
+# grows to multi-node, either move media to NFS/CIFS on this box and
+# switch the PV type, or keep Plex pinned here with a nodeSelector.
+#
+# Reclaim policy Retain: if the PVC is ever deleted, the data on
+# /data/plex/media stays put. Recreating the PVC + PV rebinds cleanly.
+#
+# Capacity 1500Gi is a soft accounting figure for the scheduler; the
+# actual limit is whatever /data has free (currently ~1.8 TB).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: plex-media
+  labels:
+    app.kubernetes.io/name: plex
+    app.kubernetes.io/component: media
+spec:
+  capacity:
+    storage: 1500Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: plex-media-local
+  local:
+    path: /data/plex/media
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - quanianitis-01

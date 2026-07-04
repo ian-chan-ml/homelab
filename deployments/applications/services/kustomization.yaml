@@ -11,3 +11,4 @@ resources:
   - firefly.yaml
   - duitku.yaml
   - n8n.yaml
+  - plex.yaml

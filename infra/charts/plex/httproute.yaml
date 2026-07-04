@@ -1,0 +1,34 @@
+# Gateway-API HTTPRoute for Plex.
+#
+# Attaches to the cluster-wide `public` Gateway `https` listener, which
+# inherits the `public-oidc` SecurityPolicy (Dex → Google OIDC + email
+# allowlist). Same pattern as n8n / firefly / argocd.
+#
+# Consequence: the Plex web UI at https://plex.62a.quanianitis.com is
+# gated by Google login. Native Plex clients (iOS/tvOS/Android/Roku)
+# cannot complete the browser redirect and will fall back to plex.tv
+# relay via app.plex.tv. Direct-connect from native apps to this
+# hostname will not work while OIDC is enforced — this is a deliberate
+# trade-off per the deployment brief.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: plex
+  labels:
+    app.kubernetes.io/name: plex
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      namespace: gateway
+  hostnames:
+    - plex.62a.quanianitis.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: plex
+          port: 32400

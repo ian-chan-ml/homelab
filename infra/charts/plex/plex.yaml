@@ -1,0 +1,185 @@
+# Plex Media Server — PVCs, Service, Deployment.
+#
+# Image: plexinc/pms-docker:1.41.9.9961-46e0b7f14 (published 2026-06-30,
+# latest stable at deploy time). Rotate the tag deliberately; the
+# `latest` tag is a moving target and Plex occasionally ships DB schema
+# migrations that are one-way.
+#
+# The plexinc image runs as root by default and re-execs Plex as
+# PLEX_UID / PLEX_GID inside the container. We pin both to 1000 to
+# match the ownership on /data/plex (chowned 1000:1000 on the host at
+# deploy time, see setup notes). This also matches the fsGroup 1000
+# we set on the pod so Plex can write to the longhorn-backed config
+# PVC without a chown storm on startup.
+#
+# TZ + PLEX_CLAIM:
+# - TZ drives scheduled tasks (library scans, maintenance windows).
+# - PLEX_CLAIM is a 4-minute one-shot token from https://plex.tv/claim
+#   used to associate this server with a Plex account on first boot.
+#   It is intentionally NOT set here — claim tokens expire in minutes
+#   and can't be checked into git. On first install, either:
+#     (a) get a claim token from https://plex.tv/claim, `kubectl -n plex
+#         set env deploy/plex PLEX_CLAIM=claim-xxxx`, wait for rollout,
+#         then remove the env once the server appears in your Plex
+#         account, or
+#     (b) skip the claim and sign in with your Plex account via the
+#         web UI directly.
+#
+# ADVERTISE_IP: not set. Behind the OIDC gateway, native Plex apps
+# can't reach this server directly anyway; they'll relay through
+# plex.tv. If direct-connect is ever needed, populate this with the
+# public URL(s), comma-separated (e.g.
+#   "https://plex.62a.quanianitis.com:443,http://<lan-ip>:32400").
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-media
+  labels:
+    app.kubernetes.io/name: plex
+    app.kubernetes.io/component: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Binds to the hand-written local PV in pv.yaml.
+  storageClassName: plex-media-local
+  volumeName: plex-media
+  resources:
+    requests:
+      storage: 1500Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: plex-config
+  labels:
+    app.kubernetes.io/name: plex
+    app.kubernetes.io/component: config
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Explicit longhorn to avoid the two-default-StorageClass ambiguity
+  # documented in infra/charts/n8n/postgres.yaml.
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plex
+  labels:
+    app.kubernetes.io/name: plex
+data:
+  TZ: "Asia/Singapore"
+  PLEX_UID: "1000"
+  PLEX_GID: "1000"
+  # Trust the Envoy Gateway hop for X-Forwarded-* handling so Plex's
+  # own access logs record the real client IP rather than the pod IP
+  # of the gateway.
+  ALLOWED_NETWORKS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plex
+  labels:
+    app.kubernetes.io/name: plex
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 32400
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: plex
+    app.kubernetes.io/component: app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plex
+  labels:
+    app.kubernetes.io/name: plex
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  strategy:
+    # Plex holds a SQLite DB open on the config PVC; two pods writing
+    # simultaneously corrupts it. Recreate ensures the old pod releases
+    # the volume before the new one starts.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plex
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: plex
+        app.kubernetes.io/component: app
+    spec:
+      # The local PV for media is pinned to quanianitis-01 via node
+      # affinity, so the pod naturally schedules here. Making it
+      # explicit for clarity when the cluster grows.
+      nodeSelector:
+        kubernetes.io/hostname: quanianitis-01
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: plex
+          image: plexinc/pms-docker:1.41.9.9961-46e0b7f14
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 32400
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: plex
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: media
+              mountPath: /data
+            - name: transcode
+              mountPath: /transcode
+          readinessProbe:
+            httpGet:
+              path: /identity
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /identity
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              # Transcodes can be CPU-hungry; leave cpu unbounded so
+              # ffmpeg can burst. Memory cap keeps runaway processes
+              # from OOMing neighbours on this single node.
+              memory: 4Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: plex-config
+        - name: media
+          persistentVolumeClaim:
+            claimName: plex-media
+        - name: transcode
+          emptyDir:
+            # Transcode scratch. sizeLimit bounds how much of the root
+            # FS Plex can eat if it starts a marathon of 4K→1080p
+            # transcodes. 10 GiB is generous for a personal library.
+            sizeLimit: 10Gi
