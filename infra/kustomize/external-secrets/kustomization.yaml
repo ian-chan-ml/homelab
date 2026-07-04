@@ -12,7 +12,6 @@ helmCharts:
 
 resources:
   - cluster-secretstore.yaml
-  - externalsecret.yaml
   - shared-homelab-secrets.yaml
 
 namespace: external-secrets
