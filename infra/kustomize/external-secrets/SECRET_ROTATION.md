@@ -268,8 +268,8 @@ Migrate Secret-by-Secret as each one is rotated. Tracking list:
 
 | Namespace / Secret              | Field(s)       | 1Password item                 | Status |
 | ------------------------------- | -------------- | ------------------------------ | ------ |
-| `gateway/gateway-api-key`       | `cf-worker`    | `gateway-api-key-inbox`        | LEGACY; kubectl-managed; scheduled for removal once `gateway-homelab-auth` ESO migration lands (see row below) |
-| `gateway/gateway-homelab-auth`  | `cf-worker` (K8s) ← `apikey-cf-worker` (1P) | `gateway-homelab-auth` | ESO manifest committed; awaiting Phase 2 population of 1P field `apikey-cf-worker`. Once populated, `inbox-apikey.credentialRefs` drops the legacy Secret and the legacy Secret is deleted. |
+| `gateway/gateway-api-key`       | `cf-worker`    | `gateway-api-key-inbox`        | LEGACY; kubectl-managed; scheduled for removal once `gateway-homelab-auth` ESO migration completes Phase 4 (see row below) |
+| `gateway/gateway-homelab-auth`  | `apikey-gateway` (K8s) ← `apikey-gateway` (1P) | `gateway-homelab-auth` | ESO manifest committed. Phase 2 populated (1P field `apikey-gateway` set out-of-band). Phase 3 will add this Secret to `inbox-apikey.credentialRefs` alongside the legacy Secret, once ES sync is verified. Phase 4 drops the legacy Secret. |
 | `duitku/gateway-api-key`        | `cf-worker`    | `gateway-api-key-inbox` (same) | rotated; kubectl-managed; remove once `gateway` ns Secret is the only one referenced |
 | `duitku/duitku` → `FIREFLY_PAT` | `FIREFLY_PAT`  | TODO                           | leaked inline (empty default), needs rotation when populated |
 | `firefly/...` → `APP_KEY`       | `APP_KEY`      | TODO                           | leaked inline             |
@@ -294,6 +294,16 @@ Update this table as items are migrated.
   Gateway SecurityPolicy `credentialRef`, the listener will reject
   every request until the Secret reappears. Recreate within the same
   shell, do not leave a gap.
+- **EG `credentialRefs` fails Invalid → fails OPEN.** Do not list a
+  Secret in `SecurityPolicy.spec.apiKeyAuth.credentialRefs` before
+  that Secret exists in the cluster. EG marks the whole SP
+  `Accepted=False reason=Invalid` on any missing ref, and an Invalid
+  SP results in unauthenticated traffic reaching the backend on every
+  listener the SP targets — not a 401. The "list both Secrets during
+  cut-over" pattern therefore only works after the new Secret has
+  materialised (Phase 3, not Phase 1, in the migration in
+  `infra/kustomize/gateway/externalsecret-homelab-auth.yaml`).
+  Observed experimentally in commit `ba5027a` (subsequently reverted).
 
 ---
 
@@ -522,7 +532,7 @@ Consumers that follow this sub-pattern today:
 | Namespace / Secret         | Shape (consumer expects)     | 1P item                | 1P fields consumed |
 | -------------------------- | ---------------------------- | ---------------------- | ------------------ |
 | `gateway/dex-client-envoy` | `client-id`, `client-secret` | `gateway-homelab-auth` | `client-id`, `client-secret` (explicit `data:`) |
-| `gateway/gateway-homelab-auth` | any K8s data-key is a valid X-API-Key credential (see `inbox-apikey` SP); the audit trail records the matched key name via `forwardClientIDHeader: x-client-id`. Today: `cf-worker`. | `gateway-homelab-auth` | `apikey-cf-worker` → remapped to K8s data key `cf-worker` so upstream `x-client-id` audit logs stay stable during the migration from the legacy `gateway/gateway-api-key` Secret. Additional consumers get their own `apikey-<name>` field + K8s data key. |
+| `gateway/gateway-homelab-auth` | any K8s data-key is a valid X-API-Key credential (see `inbox-apikey` SP); the audit trail records the matched key name via `forwardClientIDHeader: x-client-id`. Today: `apikey-gateway`. | `gateway-homelab-auth` | `apikey-gateway` → K8s data key `apikey-gateway` (1:1, no remap). The label describes the gateway credential itself, not any single consumer — the same value protects the `inbox` and `ray-api` listeners. Additional distinct credentials get their own `apikey-<name>` field + matching K8s data key. |
 
 More entries land here as the plane / grafana / google-oauth-client
 migrations happen.

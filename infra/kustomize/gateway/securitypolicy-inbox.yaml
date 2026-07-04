@@ -49,22 +49,22 @@ spec:
   apiKeyAuth:
     credentialRefs:
       # Legacy Secret, kubectl-created out-of-band per the interim
-      # workflow in SECRET_ROTATION.md. Retained during the ESO
-      # migration so callers already authenticating against it (the
-      # Cloudflare Email Worker) don't see a 401 window. Drop this
-      # entry after Phase 3 of the migration (see
-      # externalsecret-homelab-auth.yaml).
+      # workflow in SECRET_ROTATION.md. This is currently the SOLE
+      # credentialRef — the ESO-managed replacement
+      # `gateway-homelab-auth` is not listed here yet, on purpose.
+      #
+      # Envoy Gateway rejects the entire SecurityPolicy as
+      # `Accepted=False reason=Invalid` when any listed
+      # `credentialRef` points to a non-existent Secret, and an
+      # Invalid SP fails OPEN (traffic reaches the backend
+      # unauthenticated). Adding the new ref must therefore wait
+      # until the target Secret actually exists, i.e. Phase 3 of the
+      # migration described in externalsecret-homelab-auth.yaml —
+      # after Ian populates 1P field `apikey-gateway` and the ES
+      # materialises the Secret.
       - group: ""
         kind: Secret
         name: gateway-api-key
-      # ESO-managed Secret, sourced from 1P item `gateway-homelab-auth`.
-      # This is the intended end state. Whichever Secret carries a key
-      # matching the presented X-API-Key value wins — EG treats the
-      # union of all data keys across all listed Secrets as the valid
-      # credential set.
-      - group: ""
-        kind: Secret
-        name: gateway-homelab-auth
     extractFrom:
       - headers:
           - X-API-Key
