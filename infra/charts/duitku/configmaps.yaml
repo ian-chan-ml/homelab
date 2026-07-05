@@ -40,7 +40,12 @@ data:
     # asset account name. account_id format is bank-specific; see the
     # parser docstrings in github.com/ian-cq/duitku.
     maybank:
-      # "1234": "Maybank Savings ****1234"
+      # Placeholder while we bootstrap the pipeline end-to-end. The
+      # real Maybank statements will surface actual last-4 account IDs;
+      # add per-account rows here as they show up. "1234" targets the
+      # `Maybank Savings` asset account created in Firefly during the
+      # 2026-07-05 pipeline smoke test.
+      "1234": "Maybank Savings"
     uob:
       # "5678": "UOB One ****5678"
     ryt:
