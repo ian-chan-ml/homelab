@@ -50,10 +50,17 @@ spec:
                   value: https://finance.62a.quanianitis.com
                 - name: FIREFLY_PAT
                   valueFrom:
+                    # Sourced from the ESO-managed `shared-homelab-
+                    # secrets` (populated from 1P item of the same
+                    # name, provisioned in every namespace that needs
+                    # it). Non-optional: if ESO hasn't synced the
+                    # `firefly-pat-token` key at cron time we want
+                    # the Job to fail loud with a clear
+                    # kubelet-emitted "secret not found" event, not
+                    # silently start with an unset PAT.
                     secretKeyRef:
-                      name: duitku
-                      key: FIREFLY_PAT
-                      optional: true
+                      name: shared-homelab-secrets
+                      key: firefly-pat-token
               volumeMounts:
                 - name: landing
                   mountPath: /landing
