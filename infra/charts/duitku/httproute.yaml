@@ -1,23 +1,19 @@
 # Gateway-API HTTPRoute for the duitku Cloudflare-Worker webhook.
 #
-# Attaches to the `inbox` listener of Gateway `public` (in `gateway`
-# ns) via parentRefs.sectionName, which means this route inherits the
-# listener-scoped `inbox-apikey` SecurityPolicy instead of the
-# gateway-wide `public-oidc` (OAuth). The Cloudflare Email Worker
-# presents X-API-Key; OIDC would block it.
+# Attaches to the `api-https` listener of Gateway `public` (in
+# `gateway` ns) via parentRefs.sectionName, inheriting the
+# listener-scoped `inbox-apikey` SecurityPolicy. The Cloudflare Email
+# Worker presents X-API-Key; OIDC would block it.
 #
-# Hostname `inbox.62a.quanianitis.com` matches the inbox listener
-# exactly. The wildcard `https` listener (`*.62a.quanianitis.com`)
-# also covers this hostname, but per Gateway-API more-specific-wins,
-# requests dispatch to `inbox` first. The sectionName attachment also
-# ensures this route only appears under the inbox filter chain.
+# Hostname `inbox.api.quanianitis.com` is under the api-https
+# listener's wildcard `*.api.quanianitis.com`. Migrated from
+# `inbox.62a.quanianitis.com` / `sectionName: inbox` as part of the
+# *.api. consolidation (see gateway.yaml preamble). Old `inbox`
+# listener stays alive for future use; nothing binds to it.
 #
-# TLS is the shared wildcard cert on the gateway side; this route
-# exposes only /cf-inbox and /healthz - everything else 404s at envoy.
-#
-# Defence-in-depth: the duitku-webhook binary additionally enforces
-# HMAC-SHA256 over (X-Duitku-Timestamp || "." || body) for replay
-# protection. Edge api-key auth is necessary but not sufficient.
+# Only /cf-inbox and /healthz are exposed; everything else 404s at
+# envoy. Defence-in-depth: duitku-webhook also enforces HMAC-SHA256
+# over (X-Duitku-Timestamp || "." || body).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -31,9 +27,9 @@ spec:
       kind: Gateway
       name: public
       namespace: gateway
-      sectionName: inbox
+      sectionName: api-https
   hostnames:
-    - inbox.62a.quanianitis.com
+    - inbox.api.quanianitis.com
   rules:
     - matches:
         - path:
