@@ -47,7 +47,15 @@ spec:
                 - name: DUITKU_LOG_LEVEL
                   value: INFO
                 - name: FIREFLY_BASE_URL
-                  value: https://finance.62a.quanianitis.com
+                  # In-cluster Service URL, not the public
+                  # `finance.62a.quanianitis.com` hostname. The public
+                  # listener is behind Envoy Gateway's OIDC
+                  # SecurityPolicy, which 302s API calls to Dex before
+                  # Firefly ever sees the `Authorization: Bearer
+                  # <PAT>` header - the sweep would parse the OIDC
+                  # redirect envelope as JSON and fail. The sweep is
+                  # in-cluster, so bypass the edge entirely.
+                  value: http://firefly.firefly.svc.cluster.local:8080
                 - name: FIREFLY_PAT
                   valueFrom:
                     # Sourced from the ESO-managed `shared-homelab-
