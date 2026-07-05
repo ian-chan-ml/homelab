@@ -56,10 +56,9 @@ data:
     # 2026-07-05). The maybank parser handles both the savings account
     # and the Maybank-issued credit card, so both live under `maybank:`.
     #
-    # TNG eWallet (last-4 "1583") and the revenue accounts Salary /
-    # Reimbursements are intentionally omitted: TNG has no parser yet,
-    # and revenue accounts are transaction destinations, not sources
-    # keyed by account_id.
+    # Revenue accounts (Salary / Reimbursements) are intentionally
+    # omitted: they're transaction destinations, not sources keyed by
+    # account_id.
     maybank:
       "1760": "Maybank"
       "4868": "Maybank Credit"
@@ -67,3 +66,5 @@ data:
       "8029": "UOB Credit"
     ryt:
       "3918": "RytBank"
+    tng:
+      "1583": "TNG eWallet"
