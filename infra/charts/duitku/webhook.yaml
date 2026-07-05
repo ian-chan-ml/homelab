@@ -7,11 +7,12 @@
 # two), and writes a JSON sidecar with sender / message_id / sha256
 # alongside.
 #
-# Image is local-only (imagePullPolicy: Never): built by the operator
-# with buildkit and loaded into k3s containerd's k8s.io namespace via
-# `k3s ctr images import`. Single-node cluster only - if/when the
-# cluster scales out, migrate to ghcr.io/ian-cq/duitku and remove
-# `Never`.
+# Image is pulled from GHCR (public package). CI at
+# github.com/ian-cq/duitku/.github/workflows/{build,release}.yaml
+# publishes `:latest` on every push to main and `:vX.Y.Z` on tag.
+# `imagePullPolicy: Always` because `:latest` is mutable - otherwise
+# nodes cache the first digest they see and never pick up new pushes.
+# For pinned deploys, switch to `:vX.Y.Z` + `IfNotPresent`.
 #
 # Implementation: Python 3.13 + FastAPI + uvicorn (see github.com/
 # ian-cq/duitku). The Python choice is documented in §2.6 of
@@ -70,8 +71,8 @@ spec:
         fsGroup: 65532
       containers:
         - name: webhook
-          image: docker.io/library/duitku:0.4.0
-          imagePullPolicy: Never
+          image: ghcr.io/ian-cq/duitku:latest
+          imagePullPolicy: Always
           args:
             - serve
             - --addr=0.0.0.0:8080

@@ -20,11 +20,11 @@
 # The duitku-webhook binary additionally enforces HMAC over the body
 # for replay protection - api-key is necessary but not sufficient.
 #
-# Image: docker.io/library/duitku:0.2.0 - built locally with nerdctl +
-# buildkit and loaded into the k3s containerd k8s.io namespace. As long
-# as the cluster is single-node, no registry is needed
-# (imagePullPolicy: Never). Migrating to ghcr.io/ian-cq/duitku once a
-# GH token with write:packages scope is available is a followup.
+# Image: ghcr.io/ian-cq/duitku:latest - public GHCR package, built and
+# published by github.com/ian-cq/duitku CI on every push to main.
+# `imagePullPolicy: Always` on all three workloads so new pushes land
+# on next pod restart. Pin to `:vX.Y.Z` + `IfNotPresent` for a stable
+# deploy when the project cuts real release tags.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

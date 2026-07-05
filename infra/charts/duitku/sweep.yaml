@@ -36,8 +36,8 @@ spec:
             fsGroup: 65532
           containers:
             - name: sweep
-              image: docker.io/library/duitku:0.4.0
-              imagePullPolicy: Never
+              image: ghcr.io/ian-cq/duitku:latest
+              imagePullPolicy: Always
               args:
                 - sweep
                 - --landing-dir=/landing
