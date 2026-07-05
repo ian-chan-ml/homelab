@@ -39,14 +39,20 @@ data:
     # Map account_id (as the parser surfaces it) to the EXACT Firefly
     # asset account name. account_id format is bank-specific; see the
     # parser docstrings in github.com/ian-cq/duitku.
+    # Keys are the trailing 4 digits of the bank-side account / card
+    # number (see extract_account_id in each parser). Values are the
+    # EXACT Firefly asset account names (from terraform-firefly output,
+    # 2026-07-05). The maybank parser handles both the savings account
+    # and the Maybank-issued credit card, so both live under `maybank:`.
+    #
+    # TNG eWallet (last-4 "1583") and the revenue accounts Salary /
+    # Reimbursements are intentionally omitted: TNG has no parser yet,
+    # and revenue accounts are transaction destinations, not sources
+    # keyed by account_id.
     maybank:
-      # Placeholder while we bootstrap the pipeline end-to-end. The
-      # real Maybank statements will surface actual last-4 account IDs;
-      # add per-account rows here as they show up. "1234" targets the
-      # `Maybank Savings` asset account created in Firefly during the
-      # 2026-07-05 pipeline smoke test.
-      "1234": "Maybank Savings"
+      "1760": "Maybank"
+      "4868": "Maybank Credit"
     uob:
-      # "5678": "UOB One ****5678"
+      "8029": "UOB Credit"
     ryt:
-      # "9012": "Ryt Bank ****9012"
+      "3918": "RytBank"
