@@ -7,6 +7,17 @@
 # `kubectl edit configmap` is the routine maintenance verb. The
 # binary actively redacts these strings from error sidecars and logs.
 #
+# The data field is maintained OUT-OF-BAND by the operator via:
+#
+#   kubectl -n duitku create configmap duitku-passwords \
+#     --from-file=passwords.toml=./passwords.toml \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#
+# The Argo Application (deployments/applications/services/duitku.yaml)
+# has an `ignoreDifferences` on `/data` for this ConfigMap so selfHeal
+# does not clobber operator edits. The empty list below is the schema
+# placeholder Argo applies on first sync.
+#
 # duitku-accounts: YAML map of bank-side account_id -> Firefly asset
 # account name. Required for every account being imported; missing
 # entries cause the file to fail rather than guess a wrong target

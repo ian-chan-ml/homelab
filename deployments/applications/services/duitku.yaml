@@ -21,3 +21,15 @@ spec:
       - RespectIgnoreDifferences=true
       - CreateNamespace=true
       - ServerSideApply=true
+  # duitku-passwords holds PDF decryption passwords maintained
+  # out-of-band via `kubectl -n duitku create configmap ... | kubectl
+  # apply -f -` (see configmaps.yaml header). Git carries an empty
+  # list as a schema placeholder; without this ignore rule selfHeal
+  # would wipe operator-entered passwords on every reconcile.
+  ignoreDifferences:
+    - group: ""
+      kind: ConfigMap
+      name: duitku-passwords
+      namespace: duitku
+      jsonPointers:
+        - /data
