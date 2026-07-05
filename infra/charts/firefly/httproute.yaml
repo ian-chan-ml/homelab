@@ -1,9 +1,21 @@
-# Gateway-API HTTPRoute for Firefly III.
+# Gateway-API HTTPRoutes for Firefly III. Two hostnames, one backend
+# (svc/firefly:8080), two auth modes on the shared Envoy Gateway:
 #
-# Attaches to the cluster-wide `public` Gateway in the gateway namespace.
-# OAuth (Google OIDC) is enforced by the `public-oidc` SecurityPolicy
-# bound to that Gateway, so this route inherits the email allowlist
-# without any per-route configuration. See
+#   finance.62a.quanianitis.com  →  OIDC   (browser UI)
+#   firefly.api.quanianitis.com  →  X-API-Key  (programmatic API)
+#
+# Kept in one file (per-service convention: one httproute.yaml with
+# multiple docs) rather than split by auth mode, because both routes
+# target the same backend and any change to the backend port /
+# service name has to happen in both places atomically.
+
+# ---------------------------------------------------------------------
+# Firefly UI (browser, OIDC).
+#
+# Attaches to the cluster-wide `public` Gateway in the gateway
+# namespace. OAuth (Google OIDC) is enforced by the `public-oidc`
+# SecurityPolicy bound to that Gateway, so this route inherits the
+# email allowlist without any per-route configuration. See
 # infra/kustomize/gateway/securitypolicy.yaml.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -19,6 +31,62 @@ spec:
       namespace: gateway
   hostnames:
     - finance.62a.quanianitis.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: firefly
+          port: 8080
+---
+# Firefly JSON API (programmatic, X-API-Key + Firefly PAT).
+#
+# Attaches to the `api-https` listener of Gateway `public` via
+# parentRefs.sectionName, which means this route inherits the
+# listener-scoped `inbox-apikey` SecurityPolicy (X-API-Key against
+# the `gateway-homelab-auth` Secret) instead of the gateway-wide
+# `public-oidc`. Callers must present TWO credentials, layered:
+#
+#   1. X-API-Key: <apikey-gateway>              (edge, gateway)
+#   2. Authorization: Bearer <firefly-pat>      (upstream, Firefly)
+#
+# The edge apikey blocks unauthenticated internet traffic before it
+# ever reaches Firefly; the PAT is Firefly's own authn against the
+# user record. Defence in depth.
+#
+# Hostname `firefly.api.quanianitis.com` is under the api-https
+# listener's wildcard `*.api.quanianitis.com`. See
+# infra/kustomize/gateway/gateway.yaml preamble for the *.api
+# migration design intent (Phase 0), and the sibling
+# infra/charts/duitku/httproute.yaml + infra/kustomize/ray/httproute.yaml
+# which migrated first.
+#
+# Note: since backend firefly:8080 serves BOTH UI and API on the same
+# tree, a browser opened on this hostname will get 401s from Envoy
+# (missing X-API-Key), which is the intended separation — browser
+# users go to finance.62a.quanianitis.com and log in via Google.
+#
+# Path prefix is `/` to catch every Firefly API endpoint
+# (/api/v1/*, /api/v2/*, /_debugbar/*, ...) — matching the sibling
+# UI route's shape so future Firefly path additions are covered
+# without further edits here.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: firefly-api
+  labels:
+    app.kubernetes.io/name: firefly-iii
+    app.kubernetes.io/component: api
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      namespace: gateway
+      sectionName: api-https
+  hostnames:
+    - firefly.api.quanianitis.com
   rules:
     - matches:
         - path:

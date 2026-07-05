@@ -1,21 +1,34 @@
-# Gateway-API HTTPRoute for the Ray dashboard.
+# Gateway-API HTTPRoutes for Ray. Two hostnames, one backend
+# (svc/ray-head:8265), two auth modes on the shared Envoy Gateway:
+#
+#   ray-ctrl.62a.quanianitis.com  →  OIDC (browser dashboard)
+#   ray.api.quanianitis.com       →  X-API-Key (programmatic clients)
+#
+# Kept in one file (per-service convention: one httproute.yaml with
+# multiple docs) rather than split by auth mode, because both routes
+# target the same backend and any change to the backend port /
+# service name has to happen in both places atomically.
+
+# ---------------------------------------------------------------------
+# Ray dashboard UI (browser, OIDC).
 #
 # Attaches to the cluster-wide `public` Gateway `https` listener
-# (*.62a.quanianitis.com, wildcard TLS via `wildcard-62a-quanianitis-com-tls`).
-# The gateway-wide `public-oidc` SecurityPolicy applies automatically:
-# Dex → Google OIDC with an email allowlist. Same pattern as grafana,
-# argocd, and kubernetes-dashboard — Ray's dashboard is an admin UI and
-# belongs in that trust zone.
+# (*.62a.quanianitis.com, wildcard TLS via
+# `wildcard-62a-quanianitis-com-tls`). The gateway-wide `public-oidc`
+# SecurityPolicy applies automatically: Dex → Google OIDC with an
+# email allowlist. Same pattern as grafana, argocd, and
+# kubernetes-dashboard — Ray's dashboard is an admin UI and belongs
+# in that trust zone.
 #
 # The Ray dashboard (port 8265) speaks HTTP + WebSockets. Envoy Gateway
 # passes WebSockets through by default; no per-route filter needed.
 # XHR calls from the dashboard JS reuse the `IdToken` cookie because
-# `public-oidc.cookieDomain` is `62a.quanianitis.com`, which covers this
-# subdomain.
+# `public-oidc.cookieDomain` is `62a.quanianitis.com`, which covers
+# this subdomain.
 #
-# Ray client (:10001, gRPC over TCP) and GCS (:6379) are NOT exposed via
-# this HTTPRoute. They stay ClusterIP; use port-forward or another pod
-# inside the cluster to talk to them. Exposing gRPC through an
+# Ray client (:10001, gRPC over TCP) and GCS (:6379) are NOT exposed
+# via this HTTPRoute. They stay ClusterIP; use port-forward or another
+# pod inside the cluster to talk to them. Exposing gRPC through an
 # OIDC-fronted HTTPRoute would just fail — no browser to complete the
 # redirect, no cookie to carry.
 apiVersion: gateway.networking.k8s.io/v1
@@ -33,6 +46,60 @@ spec:
       namespace: gateway
   hostnames:
     - ray-ctrl.62a.quanianitis.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: ray-head
+          port: 8265
+---
+# Ray HTTP API (programmatic, X-API-Key). Dashboard REST surface on
+# port 8265: Job Submission API, State API, Serve control plane.
+#
+# Attaches to the `api-https` listener of Gateway `public` via
+# parentRefs.sectionName, which means this route inherits the
+# listener-scoped `inbox-apikey` SecurityPolicy (X-API-Key against
+# the `gateway-homelab-auth` Secret) instead of the gateway-wide
+# `public-oidc` OAuth. Programmatic Ray clients can't complete an
+# OIDC redirect; an API key is the minimum-viable equivalent.
+#
+# Hostname `ray.api.quanianitis.com` is under the api-https listener's
+# wildcard `*.api.quanianitis.com`. Migrated from `ray-api.62a.
+# quanianitis.com` / `sectionName: ray-api` on 2026-07-05 to
+# consolidate machine-to-machine callers onto the `.api.` naming
+# (see infra/kustomize/gateway/gateway.yaml preamble for the design
+# intent, and infra/charts/duitku/httproute.yaml which migrated
+# first). Naming compressed from `ray-api.api.` to `ray.api.` — the
+# `.api.` in the parent zone already conveys "this is the API";
+# carrying `-api` in the leaf label was redundant.
+#
+# The old `ray-api` listener on Gateway public stays alive
+# intentionally for future consumers; nothing binds to it after this
+# commit.
+#
+# Path prefix is `/` because the Ray dashboard mixes UI HTML and JSON
+# API endpoints on the same tree (/api/*, /logical/*, /state/api/*,
+# /serve/, ...). API-key callers only need the JSON paths; a browser
+# opened on this hostname will get 401s from EG since it cannot send
+# the header, which is the intended separation from ray-ctrl.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ray-api
+  labels:
+    app.kubernetes.io/name: ray
+    app.kubernetes.io/component: api
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      namespace: gateway
+      sectionName: api-https
+  hostnames:
+    - ray.api.quanianitis.com
   rules:
     - matches:
         - path:
