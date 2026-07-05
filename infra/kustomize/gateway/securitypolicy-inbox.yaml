@@ -1,21 +1,28 @@
 # Listener-scoped SecurityPolicy shared across the api-key surface of
 # Gateway `public`. Enforces X-API-Key auth at L7 for every route
-# attached via `parentRefs[].sectionName: {inbox, ray-api}`.
+# attached via `parentRefs[].sectionName: {inbox, ray-api, api-https}`.
 #
 # The name stays `inbox-apikey` for historical reasons; conceptually
 # this is "the api-key auth policy for non-browser callers". It
-# currently protects two listeners:
-#   - inbox   → inbox.62a.quanianitis.com     (Cloudflare Email Worker,
-#                                              other webhook consumers)
-#   - ray-api → ray-api.62a.quanianitis.com  (Ray dashboard REST API:
-#                                              Job Submission, State API)
-# Both share the ESO-managed `gateway-homelab-auth` Secret credential
-# set (see externalsecret-homelab-auth.yaml). To add a distinct
-# credential for a new consumer, add a new `apikey-<name>` field to
-# the 1P item `gateway-homelab-auth`, add a matching `data:` entry to
-# the ExternalSecret, and it becomes a valid X-API-Key value here (all
-# data keys in the Secret authenticate equally, but the matched key
-# name is forwarded upstream as `x-client-id` for audit).
+# currently protects three listeners:
+#   - inbox     → inbox.62a.quanianitis.com    (legacy hostname for
+#                                               Cloudflare Email Worker
+#                                               and other webhooks;
+#                                               dual-run with inbox.api)
+#   - ray-api   → ray-api.62a.quanianitis.com  (legacy hostname for
+#                                               Ray dashboard REST API;
+#                                               dual-run with ray.api)
+#   - api-https → *.api.quanianitis.com        (new consolidated zone
+#                                               for all api-key
+#                                               callers; see
+#                                               gateway.yaml comment)
+# All three share the ESO-managed `gateway-homelab-auth` Secret
+# credential set (see externalsecret-homelab-auth.yaml). To add a
+# distinct credential for a new consumer, add a new `apikey-<name>`
+# field to the 1P item `gateway-homelab-auth`, add a matching `data:`
+# entry to the ExternalSecret, and it becomes a valid X-API-Key value
+# here (all data keys in the Secret authenticate equally, but the
+# matched key name is forwarded upstream as `x-client-id` for audit).
 #
 # Specificity: this SP attaches to Gateway listeners (section), which
 # beats the gateway-wide `public-oidc` SP in EG's precedence
@@ -49,6 +56,10 @@ spec:
       kind: Gateway
       name: public
       sectionName: ray-api
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+      sectionName: api-https
   apiKeyAuth:
     credentialRefs:
       # ESO-managed Secret, sourced from 1P item `gateway-homelab-auth`

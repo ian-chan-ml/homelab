@@ -5,6 +5,7 @@ namespace: gateway
 
 resources:
   - certificate.yaml
+  - certificate-api.yaml
   - gateway.yaml
   - gatewayclass.yaml
   - securitypolicy.yaml

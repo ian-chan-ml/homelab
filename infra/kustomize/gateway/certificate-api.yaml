@@ -1,0 +1,30 @@
+# Wildcard cert for the machine-to-machine API surface.
+#
+# Companion to certificate.yaml (*.62a.quanianitis.com). Split into
+# a separate file so it can be revoked / rotated independently and
+# so the SecurityPolicy layering is obvious at a glance:
+#
+#   *.62a  -> browser hosts, gateway-wide `public-oidc` SecurityPolicy
+#   *.api  -> apikey hosts,  listener-scoped `inbox-apikey` SecurityPolicy
+#
+# Same ClusterIssuer (letsencrypt-prod, DNS-01 via Cloudflare on the
+# quanianitis.com zone) so no new ACME credentials needed.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-api-quanianitis-com
+  namespace: gateway
+spec:
+  secretName: wildcard-api-quanianitis-com-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: "*.api.quanianitis.com"
+  dnsNames:
+    - "*.api.quanianitis.com"
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always

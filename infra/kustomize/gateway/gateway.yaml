@@ -4,15 +4,17 @@
 # and auth.62a.quanianitis.com hits the `dex` listener.
 #
 # Each listener has its own SecurityPolicy:
-#   - https  ← public-oidc  (Dex OIDC + email allowlist)   [gateway-wide SP]
-#   - inbox  ← inbox-apikey (X-API-Key header)             [sectionName-scoped SP]
-#   - dex    ← dex-noauth   (no auth; Dex is the IdP)      [sectionName-scoped SP]
+#   - https     ← public-oidc  (Dex OIDC + email allowlist)   [gateway-wide SP]
+#   - inbox     ← inbox-apikey (X-API-Key header)             [sectionName-scoped SP]
+#   - ray-api   ← inbox-apikey (X-API-Key header)             [sectionName-scoped SP]
+#   - api-https ← inbox-apikey (X-API-Key header)             [sectionName-scoped SP]
+#   - dex       ← dex-noauth   (no auth; Dex is the IdP)      [sectionName-scoped SP]
 #
 # EG resolves SecurityPolicy specificity as listener > gateway, so the
-# inbox and dex listeners' SPs override the gateway-wide OIDC for routes
-# attached via parentRefs[].sectionName: inbox / dex. The public-oidc
-# policy gets a `PolicyConditionOverridden: true` status for [inbox, dex]
-# — that's expected, not a bug.
+# inbox / ray-api / api-https / dex listeners' SPs override the
+# gateway-wide OIDC for routes attached via parentRefs[].sectionName.
+# The public-oidc policy gets a `PolicyConditionOverridden: true` status
+# for those sections — that's expected, not a bug.
 #
 # The `dex` listener is unauthenticated on purpose: Dex is our OIDC IdP,
 # so authenticating access to its own /authorize, /token, /keys,
@@ -100,6 +102,40 @@ spec:
           - kind: Secret
             group: ""
             name: wildcard-62a-quanianitis-com-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+    # Wildcard listener for the machine-to-machine API surface. Every
+    # `<svc>.api.quanianitis.com` route attaches here via
+    # `parentRefs[].sectionName: api-https` and inherits the
+    # listener-scoped `inbox-apikey` SecurityPolicy (X-API-Key against
+    # the `gateway-homelab-auth` Secret) instead of the gateway-wide
+    # `public-oidc`.
+    #
+    # Rationale (see also `~/claude-agent/logs/2026-07-05-*` for the
+    # full design discussion): consolidating apikey callers onto their
+    # own zone (`*.api.` on the public brand) rather than the mixed
+    # `*.62a.` homelab zone makes the naming self-documenting
+    # (a `.api.` hostname always means machine-to-machine, apikey,
+    # JSON) and isolates cert / rate-limit / audit scope from browser
+    # traffic. Migration is dual-run: HTTPRoutes for the legacy
+    # `<svc>.62a.` hostnames continue to work through their existing
+    # `inbox` / `ray-api` sections until callers have moved.
+    #
+    # TLS: dedicated `wildcard-api-quanianitis-com-tls` secret,
+    # issued by the same letsencrypt-prod ClusterIssuer as the 62a
+    # wildcard (DNS-01 via Cloudflare on the quanianitis.com zone).
+    # See certificate-api.yaml.
+    - name: api-https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.api.quanianitis.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            group: ""
+            name: wildcard-api-quanianitis-com-tls
       allowedRoutes:
         namespaces:
           from: All
