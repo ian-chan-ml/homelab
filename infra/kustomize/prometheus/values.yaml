@@ -17,9 +17,12 @@ server:
   resources:
     requests:
       cpu: 200m
-      memory: 512Mi
-    limits:
       memory: 1Gi
+    limits:
+      # bumped 2026-07-12: server was OOMKilled (exit 137) in a crashloop at the
+      # old 1Gi limit — the head/WAL-replay spike on startup exceeded it. 3Gi
+      # leaves headroom on the 16Gi node (~4Gi free) for the startup peak.
+      memory: 3Gi
 serverFiles:
   prometheus.yml:
     scrape_configs:
