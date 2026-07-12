@@ -37,8 +37,12 @@ serverFiles:
               names:
                 - monitoring
         relabel_configs:
+          # fix 2026-07-12: the node-exporter Helm release creates the Service as
+          # "node-exporter-prometheus-node-exporter", not "node-exporter", so the
+          # old exact-match regex kept zero endpoints and node-exporter was never
+          # scraped (node_* metrics absent, Node Exporter dashboards blank).
           - source_labels: [__meta_kubernetes_service_name]
-            regex: node-exporter
+            regex: .*node-exporter.*
             action: keep
       - job_name: kubernetes-nodes
         scheme: https
