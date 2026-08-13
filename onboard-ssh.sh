@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
-# onboard-ssh.sh — Seed ~/.ssh/authorized_keys from a public Gist of pubkeys
+# onboard-ssh.sh — Seed ~/.ssh/authorized_keys from this repo's authorized_keys file
 #
-# Public keys aren't secret, so this pulls from a plain public Gist —
+# Public keys aren't secret, so this pulls straight from this public repo —
 # no auth token needed, works as a true one-line curl | bash.
 #
-# Setup (one-time):
-#   1. Create a public GitHub Gist named `authorized_keys` containing your
-#      phone's and any other trusted public keys, one per line.
-#   2. Set KEYS_URL below to the Gist's raw URL.
+# Adding a new trusted key: append it to authorized_keys in this repo,
+# then re-run the one-liner below on any machine.
 #
 # Usage (on any new machine):
 #   curl -fsSL https://raw.githubusercontent.com/ian-cq/homelab/main/onboard-ssh.sh | bash
 #
-# Adding a new key later: edit the Gist, re-run the one-liner on any machine.
 # Existing keys are never duplicated.
 
 set -euo pipefail
 
-KEYS_URL="${KEYS_URL:-https://gist.githubusercontent.com/<user>/<gist_id>/raw/authorized_keys}"
+KEYS_URL="${KEYS_URL:-https://raw.githubusercontent.com/ian-cq/homelab/main/authorized_keys}"
 
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
