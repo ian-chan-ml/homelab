@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# onboard-ssh-keys.sh — Seed ~/.ssh/authorized_keys from a public Gist of pubkeys
+# onboard-ssh.sh — Seed ~/.ssh/authorized_keys from a public Gist of pubkeys
 #
 # Public keys aren't secret, so this pulls from a plain public Gist —
 # no auth token needed, works as a true one-line curl | bash.
@@ -10,7 +10,7 @@
 #   2. Set KEYS_URL below to the Gist's raw URL.
 #
 # Usage (on any new machine):
-#   curl -fsSL https://raw.githubusercontent.com/ian-cq/homelab/main/onboard-ssh-keys.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ian-cq/homelab/main/onboard-ssh.sh | bash
 #
 # Adding a new key later: edit the Gist, re-run the one-liner on any machine.
 # Existing keys are never duplicated.
